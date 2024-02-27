@@ -1,5 +1,14 @@
-import tensorflow_datasets as tfds
+"""
+The following script is a copy-paste of the MNIST flax tutorial: https://flax.readthedocs.io/en/latest/quick_start.html
+Some personal comments were added for understanding.
+TODO:
+- use keras jnp version of mnist
+- implement data augmentation
+- implement conditional variance regularization
+"""
+
 import tensorflow as tf
+import tensorflow_datasets as tfds
 from flax import linen as nn
 import jax
 import jax.numpy as jnp
@@ -7,31 +16,26 @@ from clu import metrics
 from flax.training import train_state
 from flax import struct
 import optax
-import numpy as np
 import matplotlib.pyplot as plt
-from keras.datasets import mnist
-#(train_X, train_y), (test_X, test_y) = mnist.load_data()
-#train_ds = 
-
-#print("hoi")
 
 
 def get_datasets(num_epochs, batch_size):
     """Load MNIST train and test datasets into memory."""
-    
+
     train_ds = tfds.load('mnist', split='train', data_dir='.')
     test_ds = tfds.load('mnist', split='test')
-
 
     # normalize train set
     train_ds = train_ds.map(lambda sample: {'image': tf.cast(
         sample['image'], tf.float32) / 255., 'label': sample['label']})
-    
+
     # normalize test set
     test_ds = test_ds.map(lambda sample: {'image': tf.cast(
         sample['image'], tf.float32) / 255., 'label': sample['label']})
 
-    # create shuffled dataset by allocating a buffer size of 1024 to randomly draw elements from
+    # create shuffled dataset by allocating a buffer size of 1024 to randomly draw elements from.
+    # shuffle(n) reads in the first n data points, then chooses one uniformly at random, and replaces the chosen
+    # data point with data point n+1 and repeats.
     train_ds = train_ds.repeat(num_epochs).shuffle(1024)
     test_ds = test_ds.shuffle(1024)
 
@@ -45,6 +49,7 @@ def get_datasets(num_epochs, batch_size):
 class CNN(nn.Module):
     """A simple CNN model."""
     # TODO: might need to use "setup" method instead for an encoder architecture: https://flax.readthedocs.io/en/latest/guides/flax_fundamentals/flax_basics.html
+    # TODO: implement Heinze-Deml architecture
     @nn.compact
     def __call__(self, x):
         x = nn.Conv(features=32, kernel_size=(3, 3))(x)
@@ -61,38 +66,44 @@ class CNN(nn.Module):
         return x
 
 
-cnn = CNN()
-
-
+# the Metrics class contains all metrics that we wish to save in the training state
 @struct.dataclass
 class Metrics(metrics.Collection):
     accuracy: metrics.Accuracy
+    # cant find any documentation on clu.metrics.Average.from_output in the internet
+    # I assume this method automatically calculates the average loss
     loss: metrics.Average.from_output('loss')
 
-
+# it is not readable here but the training state will actually consist of:
+# a forward pass function, model parameters, an optimizer and values of the metrics chosen above
 class TrainState(train_state.TrainState):
     metrics: Metrics
 
 
-def create_train_state(module, rng, learning_rate, momentum):
+def create_train_state(module, rng, learning_rate):
     """Creates an initial `TrainState`."""
-
+    # mnist is 28x28
     params = module.init(rng, jnp.ones([1, 28, 28, 1]))['params']
 
-    # TODO: replace with adam
-    tx = optax.sgd(learning_rate, momentum)
+    tx = optax.adam(learning_rate)
 
     return TrainState.create(apply_fn=module.apply, params=params, tx=tx, metrics=Metrics.empty())
 
-
+# uncomment jit to see values while debugging
 @jax.jit
 def train_step(state, batch):
     """Train for a single step."""
 
-    # why would I redefine the loss function every time the train step is called?
     def loss_fn(params):
+
+        # unclear why one needs to pass the params as single key dictionary, can't find anything in the internet
+        # batch_size * 10 array
         logits = state.apply_fn({'params': params}, batch['image'])
+
+        # TODO: include conditional variance penalty
+        # scalar
         loss = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=batch['label']).mean()
+        
         return loss
 
     grad_fn = jax.grad(loss_fn)
@@ -101,13 +112,19 @@ def train_step(state, batch):
 
     return state
 
-
+# uncomment jit to see values while debugging
 @jax.jit
-def compute_metrics(*, state, batch): # was soll * argument?
+def compute_metrics(state, batch):
 
+    # unclear why one needs to pass the params as single key dictionary, can't find anything in the internet
+    # batch_size x 10 array
     logits = state.apply_fn({'params': state.params}, batch['image'])
-    loss = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=batch['label']).mean()
 
+    # TODO: include conditional variance penalty
+    # scalar
+    loss = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=batch['label']).mean()
+    
+    # can't find any documentation on what "single_from_model_output" does except for literal source code
     metric_updates = state.metrics.single_from_model_output(logits=logits, labels=batch['label'], loss=loss)
     metrics = state.metrics.merge(metric_updates)
     state = state.replace(metrics=metrics)
@@ -126,24 +143,29 @@ if __name__ == "__main__":
 
     tf.random.set_seed(0)
     init_rng = jax.random.key(0)
-
-    state = create_train_state(cnn, init_rng, learning_rate, momentum)
+    cnn = CNN()
+    state = create_train_state(cnn, init_rng, learning_rate)
 
     # since train_ds is replicated num_epochs times in get_datasets(), we divide by num_epochs
-    num_steps_per_epoch = train_ds.cardinality().numpy() // num_epochs
+    #note: train_ds contains batches not individual data points
+    steps_per_epoch = train_ds.cardinality().numpy() // num_epochs
 
+    # metrics_history will contain the relevant metrics after each training epoch
     metrics_history = {'train_loss': [],
-                    'train_accuracy': [],
-                    'test_loss': [],
-                    'test_accuracy': []}
+                       'train_accuracy': [],
+                       'test_loss': [],
+                       'test_accuracy': []}
 
     for step, batch in enumerate(train_ds.as_numpy_iterator()):
 
         state = train_step(state, batch)
         state = compute_metrics(state=state, batch=batch)
 
-        if (step + 1) % num_steps_per_epoch == 0:
-
+        if (step + 1) % steps_per_epoch == 0:
+            
+            # again: cant find any info on what metrics.compute() actually does except source code.
+            # from source code I gather that it performs averaging s.t. it averages over the metrics
+            # of all batches in that epoch
             for metric, value in state.metrics.compute().items():
                 metrics_history[f'train_{metric}'].append(value)
 
@@ -151,26 +173,22 @@ if __name__ == "__main__":
             state = state.replace(metrics=state.metrics.empty())
 
             # Compute metrics on the test set after each training epoch
+            # need to make a copy of the current training state because the saved metrics will be overwritten
             test_state = state
+            # test set is also fed in batches, I think this should also work by just feeding the entire thing at once
             for test_batch in test_ds.as_numpy_iterator():
                 test_state = compute_metrics(state=test_state, batch=test_batch)
 
             for metric, value in test_state.metrics.compute().items():
                 metrics_history[f'test_{metric}'].append(value)
 
-            print(f"train epoch: {(step+1) // num_steps_per_epoch}, "
-                f"loss: {metrics_history['train_loss'][-1]}, "
-                f"accuracy: {metrics_history['train_accuracy'][-1] * 100}")
-            
-            print(f"test epoch: {(step+1) // num_steps_per_epoch}, "
-                f"loss: {metrics_history['test_loss'][-1]}, "
-                f"accuracy: {metrics_history['test_accuracy'][-1] * 100}")
+            print(f"train epoch: {(step+1) // steps_per_epoch}, "
+                  f"loss: {metrics_history['train_loss'][-1]}, "
+                  f"accuracy: {metrics_history['train_accuracy'][-1] * 100}")
 
-
-
-
-
-
+            print(f"test epoch: {(step+1) // steps_per_epoch}, "
+                  f"loss: {metrics_history['test_loss'][-1]}, "
+                  f"accuracy: {metrics_history['test_accuracy'][-1] * 100}")
 
     # Plot loss and accuracy in subplots
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
@@ -180,25 +198,19 @@ if __name__ == "__main__":
     for dataset in ('train', 'test'):
         ax1.plot(metrics_history[f'{dataset}_loss'], label=f'{dataset}_loss')
         ax2.plot(metrics_history[f'{dataset}_accuracy'],
-                label=f'{dataset}_accuracy')
-        
+                 label=f'{dataset}_accuracy')
+
     ax1.legend()
     ax2.legend()
     plt.show()
     plt.clf()
-
 
     @jax.jit
     def pred_step(state, batch):
         logits = state.apply_fn({'params': state.params}, test_batch['image'])
         return logits.argmax(axis=1)
 
-
     test_batch = test_ds.as_numpy_iterator().next()
     pred = pred_step(state, test_batch)
 
-    fig, axs = plt.subplots(5, 5, figsize=(12, 12))
-    for i, ax in enumerate(axs.flatten()):
-        ax.imshow(test_batch['image'][i, ..., 0], cmap='gray')
-        ax.set_title(f"label={pred[i]}")
-        ax.axis('off')
+
