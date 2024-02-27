@@ -1,14 +1,12 @@
 """
-The following script is a copy-paste of the MNIST flax tutorial: https://flax.readthedocs.io/en/latest/quick_start.html
-Some personal comments were added for understanding.
+The following script is currently mostly a copy-paste of the MNIST flax tutorial: https://flax.readthedocs.io/en/latest/quick_start.html
+The code is being adjusted in order to reproduce the MNIST part of https://arxiv.org/abs/1710.11469
 TODO:
-- use keras jnp version of mnist to make data augmentation easier
 - implement Heinze data augmentation
 - implement conditional variance regularization
 """
 
 import tensorflow as tf
-import tensorflow_datasets as tfds
 from flax import linen as nn
 import jax
 import jax.numpy as jnp
@@ -18,52 +16,23 @@ from flax import struct
 import optax
 import matplotlib.pyplot as plt
 import keras
-
-
-"""
-def get_datasets(num_epochs, batch_size):
-
-    train_ds = tfds.load('mnist', split='train', data_dir='.')
-    test_ds = tfds.load('mnist', split='test')
-
-    # normalize train set
-    train_ds = train_ds.map(lambda sample: {'image': tf.cast(
-        sample['image'], tf.float32) / 255., 'label': sample['label']})
-
-    # normalize test set
-    test_ds = test_ds.map(lambda sample: {'image': tf.cast(
-        sample['image'], tf.float32) / 255., 'label': sample['label']})
-
-    # create shuffled dataset by allocating a buffer size of 1024 to randomly draw elements from.
-    # shuffle(n) reads in the first n data points, then chooses one uniformly at random, and replaces the chosen
-    # data point with data point n+1 and repeats.
-    train_ds = train_ds.repeat(num_epochs).shuffle(1024)
-    test_ds = test_ds.shuffle(1024)
-
-    # group into batches of batch_size and skip incomplete batch, prefetch the next sample to improve latency
-    train_ds = train_ds.batch(batch_size, drop_remainder=True).prefetch(1)
-    test_ds = test_ds.batch(batch_size, drop_remainder=True).prefetch(1)
-
-    return train_ds, test_ds
-"""
+from scipy import ndimage
 
 
 class CNN(nn.Module):
     """A simple CNN model."""
     # TODO: might need to use "setup" method instead for an encoder architecture: https://flax.readthedocs.io/en/latest/guides/flax_fundamentals/flax_basics.html
-    # TODO: implement Heinze-Deml architecture
     @nn.compact
     def __call__(self, x):
-        x = nn.Conv(features=32, kernel_size=(3, 3))(x)
+        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
         x = nn.relu(x)
+        # unclear whether Heinze uses avg or max pool or any pooling at all
         x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
-        x = nn.Conv(features=64, kernel_size=(3, 3))(x)
+        x = nn.Conv(features=32, kernel_size=(5, 5), strides=2)(x)
         x = nn.relu(x)
         x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
         # flatten for classification layer
         x = x.reshape((x.shape[0], -1))
-        x = nn.Dense(features=256)(x)
-        x = nn.relu(x)
         x = nn.Dense(features=10)(x)
         return x
 
@@ -93,8 +62,6 @@ def create_train_state(module, rng, learning_rate):
 
     return TrainState.create(apply_fn=module.apply, params=_params, tx=tx, metrics=Metrics.empty())
 
-# uncomment jit to see values while debugging
-
 
 @jax.jit
 def train_step(state, images, labels):
@@ -102,13 +69,11 @@ def train_step(state, images, labels):
 
     def loss_fn(params_):
 
-        # unclear why one needs to pass the params as single key dictionary, can't find anything in the internet
-        # batch_size * 10 array
         logits = state.apply_fn({'params': params_}, images)
 
         # TODO: include conditional variance penalty
-        # scalar
-        loss = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=labels).mean()
+        loss = optax.softmax_cross_entropy_with_integer_labels(
+            logits=logits, labels=labels).mean()
 
         return loss
 
@@ -118,23 +83,19 @@ def train_step(state, images, labels):
 
     return state
 
-# uncomment jit to see values while debugging
-
 
 @jax.jit
 def compute_metrics(state, images, labels):
 
-    # unclear why one needs to pass the params as single key dictionary, can't find anything in the internet
-    # batch_size x 10 array
     logits = state.apply_fn({'params': state.params}, images)
 
     # TODO: include conditional variance penalty
-    # scalar
     loss = optax.softmax_cross_entropy_with_integer_labels(
         logits=logits, labels=labels).mean()
 
     # can't find any documentation on what "single_from_model_output" does except for literal source code
-    metric_updates = state.metrics.single_from_model_output(logits=logits, labels=labels, loss=loss)
+    metric_updates = state.metrics.single_from_model_output(
+        logits=logits, labels=labels, loss=loss)
     metrics = state.metrics.merge(metric_updates)
     state = state.replace(metrics=metrics)
 
@@ -149,6 +110,16 @@ def pred_step(state, images):
 
 if __name__ == "__main__":
 
+    ################## DEFINE ALL FREE PARAMETES OF THE SCRIPT ##################
+    num_epochs = 6
+    batch_size = 120
+    learning_rate = 0.01
+    # number of data points to be augmented by rotation
+    c = 200
+    # number of groups in training set, such that number of data points in training set is n + c.
+    n = 10000
+
+    ################## MNIST DATA AUGMENTATION ##################
     (x_train, y_train), (x_test, y_test) = keras.datasets.mnist.load_data()
     # TODO: shuffle the data
     x_train = jnp.array(x_train) / 255
@@ -159,24 +130,38 @@ if __name__ == "__main__":
     y_train = jnp.array(y_train).astype(jnp.int32)
     y_test = jnp.array(y_test).astype(jnp.int32)
 
-    
-    
+    rng = jax.random.key(0)
+    indices = jax.random.choice(
+        rng, jnp.arange(60000), shape=(n,), replace=False)
 
-    num_epochs = 8
-    batch_size = 32
-    learning_rate = 0.005
+    x_train = x_train[indices, :, :, :]
+    y_train = y_train[indices]
+    id_train = jnp.arange(10000)
+    rng = jax.random.key(1)
+    aug_indices = jax.random.choice(
+        rng, jnp.arange(10000), shape=(c,), replace=False)
+    rng = jax.random.key(2)
+    rot_samples = jax.random.choice(
+        rng, jnp.array([35, 70]), shape=(c,), replace=True)
 
-    # train_ds, test_ds = get_datasets(num_epochs, batch_size)
+    for i in aug_indices:
+        new_img = ndimage.rotate(
+            x_train[i, :, :, :], rot_samples[i], reshape=False)
+        new_img = jnp.reshape(new_img, (1, 28, 28, 1))
+        x_train = jnp.vstack((x_train, new_img))
 
+    y_train = jnp.hstack((y_train, y_train[aug_indices]))
+    id_train = jnp.hstack((id_train, aug_indices))
+
+    ################## TRAINING ##################
     tf.random.set_seed(0)
-    init_rng = jax.random.key(0)
     cnn = CNN()
-    state = create_train_state(cnn, init_rng, learning_rate)
+    rng = jax.random.key(3)
+    state = create_train_state(cnn, rng, learning_rate)
 
     steps_per_epoch = jnp.ceil(jnp.shape(y_train)[0] / batch_size)
     steps_per_epoch = int(steps_per_epoch)
 
-    # metrics_history will contain the relevant metrics after each training epoch
     metrics_history = {'train_loss': [],
                        'train_accuracy': [],
                        'test_loss': [],
@@ -207,9 +192,6 @@ if __name__ == "__main__":
             # need to make a copy of the current training state because the saved metrics will be overwritten
             test_state = state
             test_state = compute_metrics(test_state, x_test, y_test)
-            # test set is also fed in batches, I think this should also work by just feeding the entire thing at once
-            # for test_batch in test_ds.as_numpy_iterator():
-            #    test_state = compute_metrics(state=test_state, batch=test_batch)
 
             for metric, value in test_state.metrics.compute().items():
                 metrics_history[f'test_{metric}'].append(value)
@@ -222,7 +204,7 @@ if __name__ == "__main__":
                   f"loss: {metrics_history['test_loss'][-1]}, "
                   f"accuracy: {metrics_history['test_accuracy'][-1] * 100}")
 
-    # Plot loss and accuracy in subplots
+    ################## PLOT LEARNING CURVE ##################
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
     ax1.set_title('Loss')
     ax2.set_title('Accuracy')
