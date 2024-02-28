@@ -199,22 +199,20 @@ if __name__ == "__main__":
 
     y_train = jnp.hstack((y_train, y_train[aug_indices]))
 
-    """
     # two test sets will be used to evaluate domain shift invariance: test set 1 is the original MNIST,
     # test set 2 contains the same images but rotated by 35 or 70 degrees with uniform probability
     key, subkey = jax.random.split(key)
     rot_samples = jax.random.choice(subkey, jnp.array([35, 70]), shape=(10000,), replace=True)
     x_test2 = x_test1
 
-    # TODO: vectorize this
-    
+    # TODO: vectorize this for efficiency
     for i in range(10000):
         new_img = ndimage.rotate(x_test1[i, :, :, :], rot_samples[i], reshape=False)
         x_test2 = x_test2.at[i, :, :, :].set(new_img)
-    """
+    
 
     ########################### TEST BATCH CREATION ############################
-    x_batches, y_batches, id_batches = get_grouped_batches(x_train, y_train, id_to_idx, batch_size, key)
+    #x_batches, y_batches, id_batches = get_grouped_batches(x_train, y_train, id_to_idx, batch_size, key)
 
     ################## TRAINING ##################
     print("\n #################### START TRAINING #################### \n")
@@ -228,8 +226,10 @@ if __name__ == "__main__":
 
     metrics_history = {'train_loss': [],
                        'train_accuracy': [],
-                       'test_loss': [],
-                       'test_accuracy': []}
+                       'test1_loss': [],
+                       'test1_accuracy': [],
+                       'test2_loss': [],
+                       'test2_accuracy': []}
 
     for step in range(num_epochs * steps_per_epoch):
 
@@ -254,26 +254,39 @@ if __name__ == "__main__":
 
             # Compute metrics on the test set after each training epoch
             # need to make a copy of the current training state because the saved metrics will be overwritten
-            test_state = state
-            test_state = compute_metrics(test_state, x_test1, y_test)
+            test1_state = state
+            test1_state = compute_metrics(test1_state, x_test1, y_test)
+            
+            test2_state = state
+            test2_state = compute_metrics(test2_state, x_test2, y_test)
 
-            for metric, value in test_state.metrics.compute().items():
-                metrics_history[f'test_{metric}'].append(value)
+            for metric, value in test1_state.metrics.compute().items():
+                metrics_history[f'test1_{metric}'].append(value)
+
+            for metric, value in test2_state.metrics.compute().items():
+                metrics_history[f'test2_{metric}'].append(value)
 
             print(f"train epoch: {(step+1) // steps_per_epoch}, "
                   f"loss: {metrics_history['train_loss'][-1]}, "
                   f"accuracy: {metrics_history['train_accuracy'][-1] * 100}")
 
-            print(f"test epoch: {(step+1) // steps_per_epoch}, "
-                  f"loss: {metrics_history['test_loss'][-1]}, "
-                  f"accuracy: {metrics_history['test_accuracy'][-1] * 100}")
+            print(f"test1 epoch: {(step+1) // steps_per_epoch}, "
+                  f"loss: {metrics_history['test1_loss'][-1]}, "
+                  f"accuracy: {metrics_history['test1_accuracy'][-1] * 100}")
+            
+            print(f"test2 epoch: {(step+1) // steps_per_epoch}, "
+                  f"loss: {metrics_history['test2_loss'][-1]}, "
+                  f"accuracy: {metrics_history['test2_accuracy'][-1] * 100}")
+            
+            print("\n############################################################# \n")
+                 
 
     ################## PLOT LEARNING CURVE ##################
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
     ax1.set_title('Loss')
     ax2.set_title('Accuracy')
 
-    for dataset in ('train', 'test'):
+    for dataset in ('train', 'test1', 'test2'):
         ax1.plot(metrics_history[f'{dataset}_loss'], label=f'{dataset}_loss')
         ax2.plot(metrics_history[f'{dataset}_accuracy'],
                  label=f'{dataset}_accuracy')
@@ -283,4 +296,4 @@ if __name__ == "__main__":
     plt.show()
     plt.clf()
 
-    pred = pred_step(state, x_test1)
+    pred = pred_step(state, x_test2)
