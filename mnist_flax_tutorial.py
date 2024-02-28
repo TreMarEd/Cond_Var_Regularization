@@ -2,9 +2,7 @@
 The following script is currently mostly a copy-paste of the MNIST flax tutorial: https://flax.readthedocs.io/en/latest/quick_start.html
 The code is being adjusted in order to reproduce the MNIST part of https://arxiv.org/abs/1710.11469
 TODO:
-- implement Heinze data augmentation
-- implement conditional variance regularization
-"""
+- implement conditional variance regularization including mini batch allocation of (y,id) groups"""
 
 import tensorflow as tf
 from flax import linen as nn
@@ -101,6 +99,13 @@ def compute_metrics(state, images, labels):
 
     return state
 
+#@jax.jit
+def get_grouped_batches(x, y, id, batch_size, rng):
+    # draw a random id wo replacement out of the 10000, add it to the badge and keep count of the badge size. 
+    # => split how does one propagate the rng?
+    # TODO: implement this function
+    pass
+
 
 @jax.jit
 def pred_step(state, images):
@@ -110,55 +115,74 @@ def pred_step(state, images):
 
 if __name__ == "__main__":
 
-    ################## DEFINE ALL FREE PARAMETES OF THE SCRIPT ##################
+    ################## DEFINE FREE PARAMETES  ##################
     num_epochs = 6
     batch_size = 120
     learning_rate = 0.01
     # number of data points to be augmented by rotation
     c = 200
-    # number of groups in training set, such that number of data points in training set is n + c.
+    # number of original data points in training set, such that number of data points in final training set after augmentaiton is n + c.
     n = 10000
 
     ################## MNIST DATA AUGMENTATION ##################
-    (x_train, y_train), (x_test, y_test) = keras.datasets.mnist.load_data()
-    # TODO: shuffle the data
+    print("\n #################### AUGMENTING MNIST DATA #################### \n")
+
+    # TODO: implement test set 1 and test set 2
+    # TODO: properly handle the JAX rngs
+    # TODO: data augmentation takes way too long, either write out the data and read it in or improve efficiency
+    (x_train, y_train), (x_test1, y_test) = keras.datasets.mnist.load_data()
+
     x_train = jnp.array(x_train) / 255
-    x_test = jnp.array(x_test) / 255
+    x_test1 = jnp.array(x_test1) / 255
     x_train = jnp.reshape(x_train, (60000, 28, 28, 1))
-    x_test = jnp.reshape(x_test, (10000, 28, 28, 1))
+    x_test1 = jnp.reshape(x_test1, (10000, 28, 28, 1))
 
     y_train = jnp.array(y_train).astype(jnp.int32)
     y_test = jnp.array(y_test).astype(jnp.int32)
 
     rng = jax.random.key(0)
-    indices = jax.random.choice(
-        rng, jnp.arange(60000), shape=(n,), replace=False)
+    indices = jax.random.choice(rng, jnp.arange(60000), shape=(n,), replace=False)
 
     x_train = x_train[indices, :, :, :]
     y_train = y_train[indices]
-    id_train = jnp.arange(10000)
+    
     rng = jax.random.key(1)
-    aug_indices = jax.random.choice(
-        rng, jnp.arange(10000), shape=(c,), replace=False)
+    aug_indices = jax.random.choice(rng, jnp.arange(10000), shape=(c,), replace=False)
     rng = jax.random.key(2)
-    rot_samples = jax.random.choice(
-        rng, jnp.array([35, 70]), shape=(c,), replace=True)
+    rot_samples = jax.random.choice(rng, jnp.array([35, 70]), shape=(c,), replace=True)
 
-    for i in aug_indices:
-        new_img = ndimage.rotate(
-            x_train[i, :, :, :], rot_samples[i], reshape=False)
+    # list that indexed at relevant id provides list of the indices of all data points with that id
+    # note the id of the original data points is set to their index
+    id_to_idx = [[i] for i in range(n)]
+
+    for cnt, i in enumerate(aug_indices):
+
+        new_img = ndimage.rotate(x_train[i, :, :, :], rot_samples[i], reshape=False)
         new_img = jnp.reshape(new_img, (1, 28, 28, 1))
         x_train = jnp.vstack((x_train, new_img))
 
+        # add index to the relevant id
+        id_to_idx[i].append(n + cnt)
+
     y_train = jnp.hstack((y_train, y_train[aug_indices]))
-    id_train = jnp.hstack((id_train, aug_indices))
+
+    # two test sets will be used to evaluate domain shift invariance: test set 1 is the original MNIST,
+    # test set 2 contains the same images but rotated by 35 or 70 degrees with uniform probability
+    rng = jax.random.key(3)
+    rot_samples = jax.random.choice(rng, jnp.array([35, 70]), shape=(10000,), replace=True)
+    x_test2 = x_test1
+
+    # TODO: vectorize this
+    for i in range(10000):
+        new_img = ndimage.rotate(x_test1[i, :, :, :], rot_samples[i], reshape=False)
+        x_test2 = x_test2.at[i, :, :, :].set(new_img)
 
     ################## TRAINING ##################
+    print("\n #################### AUGMENTING MNIST DATA #################### \n")
+
     tf.random.set_seed(0)
     cnn = CNN()
-    rng = jax.random.key(3)
-    state = create_train_state(cnn, rng, learning_rate)
-
+    rng = jax.random.key(4)
     steps_per_epoch = jnp.ceil(jnp.shape(y_train)[0] / batch_size)
     steps_per_epoch = int(steps_per_epoch)
 
