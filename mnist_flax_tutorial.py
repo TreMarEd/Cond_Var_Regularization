@@ -100,10 +100,12 @@ def compute_metrics(state, images, labels):
 
     return state
 
+# TODO: find out how to jit this without error
 #@jax.jit
 def get_grouped_batches(x, y, id_to_idx, batch_size, key):
 
-    num_batches = int(jnp.floor(len(id_to_idx)/batch_size))
+    num_batches = jnp.floor(len(id_to_idx)/batch_size)
+    num_batches = num_batches.astype(int)
     ids = [i for i in range(len(id_to_idx))]
 
     x_batches = []
@@ -115,18 +117,18 @@ def get_grouped_batches(x, y, id_to_idx, batch_size, key):
         x_batch = []
         y_batch = []
         id_batch = []
-        
 
         key, subkey = jax.random.split(key)
-        sample_ids = np.array(jax.random.choice(subkey, jnp.array(ids), shape=(batch_size,), replace=False))
+        sample_ids = np.array(jax.random.choice(
+            subkey, jnp.array(ids), shape=(batch_size,), replace=False))
         for id in sample_ids:
             for idx in id_to_idx[id]:
-                x_batch.append(jnp.reshape(x[idx, :, :, :], (1,28,28,1)))
+                x_batch.append(jnp.reshape(x[idx, :, :, :], (1, 28, 28, 1)))
                 y_batch.append(y[idx])
                 id_batch.append(id)
 
         ids = list(set(ids) - set(sample_ids))
-        
+
         x_batch = jnp.vstack(x_batch)
         y_batch = jnp.hstack(y_batch)
         id_batch = jnp.hstack(id_batch)
@@ -149,19 +151,18 @@ if __name__ == "__main__":
     ################## DEFINE FREE PARAMETES  ##################
     num_epochs = 20
     batch_size = 120
-    learning_rate = 0.01
-    seed = 1
+    learning_rate = 0.007
+    # regularization parameter
+    l = 1
+    seed = 2134
     # number of data points to be augmented by rotation
     c = 200
     # number of original data points in training set, such that number of data points in final training set after augmentaiton is n + c.
     n = 10000
-    # regularization parameter
-    l = 1
 
     ################## MNIST DATA AUGMENTATION ##################
     print("\n #################### AUGMENTING MNIST DATA #################### \n")
 
-    # TODO: data augmentation takes way too long, either write out the data and read it in or improve efficiency
     (x_train, y_train), (x_test1, y_test) = keras.datasets.mnist.load_data()
 
     x_train = jnp.array(x_train) / 255
@@ -174,16 +175,19 @@ if __name__ == "__main__":
 
     key = jax.random.key(seed)
     key, subkey = jax.random.split(key)
-    indices = jax.random.choice(subkey, jnp.arange(60000), shape=(n,), replace=False)
+    indices = jax.random.choice(
+        subkey, jnp.arange(60000), shape=(n,), replace=False)
 
     x_train = x_train[indices, :, :, :]
     y_train = y_train[indices]
 
     key, subkey = jax.random.split(key)
-    aug_indices = jax.random.choice(subkey, jnp.arange(10000), shape=(c,), replace=False)
-    
+    aug_indices = jax.random.choice(
+        subkey, jnp.arange(10000), shape=(c,), replace=False)
+
     key, subkey = jax.random.split(key)
-    rot_samples = jax.random.uniform(subkey, shape=(c,), minval=35., maxval=70.)
+    rot_samples = jax.random.uniform(
+        subkey, shape=(c,), minval=35., maxval=70.)
 
     # list that indexed at relevant id provides list of the indices of all data points with that id
     # note the id of the original data points is set to their index
@@ -191,7 +195,8 @@ if __name__ == "__main__":
 
     for cnt, i in enumerate(aug_indices):
 
-        new_img = ndimage.rotate(x_train[i, :, :, :], rot_samples[i], reshape=False)
+        new_img = ndimage.rotate(
+            x_train[i, :, :, :], rot_samples[i], reshape=False)
         new_img = jnp.reshape(new_img, (1, 28, 28, 1))
         x_train = jnp.vstack((x_train, new_img))
 
@@ -203,18 +208,16 @@ if __name__ == "__main__":
     # two test sets will be used to evaluate domain shift invariance: test set 1 is the original MNIST,
     # test set 2 contains the same images but rotated by 35 or 70 degrees with uniform probability
     key, subkey = jax.random.split(key)
-    rot_samples = jax.random.uniform(subkey, shape=(10000,), minval=35., maxval=70.)
+    rot_samples = jax.random.uniform(
+        subkey, shape=(10000,), minval=35., maxval=70.)
 
     x_test2 = x_test1
 
     # TODO: vectorize this for efficiency
     for i in range(10000):
-        new_img = ndimage.rotate(x_test1[i, :, :, :], rot_samples[i], reshape=False)
+        new_img = ndimage.rotate(
+            x_test1[i, :, :, :], rot_samples[i], reshape=False)
         x_test2 = x_test2.at[i, :, :, :].set(new_img)
-    
-
-    ########################### TEST BATCH CREATION ############################
-    #x_batches, y_batches, id_batches = get_grouped_batches(x_train, y_train, id_to_idx, batch_size, key)
 
     ################## TRAINING ##################
     print("\n #################### START TRAINING #################### \n")
@@ -223,65 +226,56 @@ if __name__ == "__main__":
     cnn = CNN()
     key, subkey = jax.random.split(key)
     state = create_train_state(cnn, subkey, learning_rate)
-    steps_per_epoch = jnp.ceil(jnp.shape(y_train)[0] / batch_size)
-    steps_per_epoch = int(steps_per_epoch)
 
-    metrics_history = {'train_loss': [],
-                       'train_accuracy': [],
-                       'test1_loss': [],
-                       'test1_accuracy': [],
-                       'test2_loss': [],
-                       'test2_accuracy': []}
+    metrics_history = {'train_loss': [], 'train_accuracy': [], 'test1_loss': [],
+                       'test1_accuracy': [], 'test2_loss': [], 'test2_accuracy': []}
 
-    for step in range(num_epochs * steps_per_epoch):
+    for i in range(num_epochs):
 
-        i = step % steps_per_epoch
+        key, subkey = jax.random.split(key)
+        x_batches, y_batches, id_batches = get_grouped_batches(
+            x_train, y_train, id_to_idx, batch_size, subkey)
 
-        train_images = x_train[i*batch_size:(i+1)*batch_size, :, :, :]
-        train_labels = y_train[i*batch_size:(i+1)*batch_size]
+        for j in range(len(x_batches)):
+            train_images = x_batches[j]
+            train_labels = y_batches[j]
 
-        state = train_step(state, train_images, train_labels)
-        state = compute_metrics(state, train_images, train_labels)
+            state = train_step(state, train_images, train_labels)
+            state = compute_metrics(state, train_images, train_labels)
 
-        if (step + 1) % steps_per_epoch == 0:
-
-            # again: cant find any info on what metrics.compute() actually does except source code.
-            # from source code I gather that it performs averaging s.t. it averages over the metrics
-            # of all batches in that epoch
-            for metric, value in state.metrics.compute().items():
-                metrics_history[f'train_{metric}'].append(value)
+        # again: cant find any info on what metrics.compute() actually does except source code.
+        # from source code I gather that it performs averaging s.t. it averages over the metrics
+        # of all batches in that epoch
+        for metric, value in state.metrics.compute().items():
+            metrics_history[f'train_{metric}'].append(value)
 
             # reset train_metrics for next training epoch
             state = state.replace(metrics=state.metrics.empty())
 
-            # Compute metrics on the test set after each training epoch
-            # need to make a copy of the current training state because the saved metrics will be overwritten
-            test1_state = state
-            test1_state = compute_metrics(test1_state, x_test1, y_test)
-            
-            test2_state = state
-            test2_state = compute_metrics(test2_state, x_test2, y_test)
+        # Compute metrics on the test set after each training epoch
+        # need to make a copy of the current training state because the saved metrics will be overwritten
+        test1_state = state
+        test1_state = compute_metrics(test1_state, x_test1, y_test)
 
-            for metric, value in test1_state.metrics.compute().items():
-                metrics_history[f'test1_{metric}'].append(value)
+        test2_state = state
+        test2_state = compute_metrics(test2_state, x_test2, y_test)
 
-            for metric, value in test2_state.metrics.compute().items():
-                metrics_history[f'test2_{metric}'].append(value)
+        for metric, value in test1_state.metrics.compute().items():
+            metrics_history[f'test1_{metric}'].append(value)
 
-            print(f"train epoch: {(step+1) // steps_per_epoch}, "
-                  f"loss: {metrics_history['train_loss'][-1]}, "
-                  f"accuracy: {metrics_history['train_accuracy'][-1] * 100}")
+        for metric, value in test2_state.metrics.compute().items():
+            metrics_history[f'test2_{metric}'].append(value)
 
-            print(f"test1 epoch: {(step+1) // steps_per_epoch}, "
-                  f"loss: {metrics_history['test1_loss'][-1]}, "
-                  f"accuracy: {metrics_history['test1_accuracy'][-1] * 100}")
-            
-            print(f"test2 epoch: {(step+1) // steps_per_epoch}, "
-                  f"loss: {metrics_history['test2_loss'][-1]}, "
-                  f"accuracy: {metrics_history['test2_accuracy'][-1] * 100}")
-            
-            print("\n############################################################# \n")
-                 
+        print(f"train epoch: {i+1}, "f"loss: {metrics_history['train_loss'][-1]}, "
+              f"accuracy: {metrics_history['train_accuracy'][-1] * 100}")
+
+        print(f"test1 epoch: {i+1}, "f"loss: {metrics_history['test1_loss'][-1]}, "
+              f"accuracy: {metrics_history['test1_accuracy'][-1] * 100}")
+
+        print(f"test2 epoch: {i+1}, "f"loss: {metrics_history['test2_loss'][-1]}, "
+              f"accuracy: {metrics_history['test2_accuracy'][-1] * 100}")
+
+        print("\n############################################################# \n")
 
     ################## PLOT LEARNING CURVE ##################
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
@@ -289,11 +283,13 @@ if __name__ == "__main__":
     ax1.set_title('CE Loss')
     ax2.set_title('Accuracy')
 
-    dic = {'train': 'train', 'test1': 'orignal MNIST test', 'test2': 'rotated MNIST test'}
+    dic = {'train': 'train', 'test1': 'orignal MNIST test',
+           'test2': 'rotated MNIST test'}
     for dataset in ('train', 'test1', 'test2'):
         ax1.plot(metrics_history[f'{dataset}_loss'], label=f'{dic[dataset]}')
-        ax2.plot(metrics_history[f'{dataset}_accuracy'], label=f'{dic[dataset]}')
-        
+        ax2.plot(metrics_history[f'{dataset}_accuracy'],
+                 label=f'{dic[dataset]}')
+
     ax1.set_xlabel("epoch")
     ax2.set_xlabel("epoch")
 
@@ -305,8 +301,7 @@ if __name__ == "__main__":
 
     ax1.grid(True)
     ax2.grid(True)
-
-    
+    plt.savefig(".\learning_curve.png")
     plt.show()
     plt.clf()
 
