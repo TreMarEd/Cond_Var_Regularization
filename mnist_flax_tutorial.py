@@ -15,6 +15,7 @@ import optax
 import matplotlib.pyplot as plt
 import keras
 from scipy import ndimage
+import numpy as np
 
 
 class CNN(nn.Module):
@@ -99,11 +100,10 @@ def compute_metrics(state, images, labels):
 
     return state
 
-# TODO: make this much more efficient, hope that jitting will already help alot
 #@jax.jit
 def get_grouped_batches(x, y, id_to_idx, batch_size, key):
 
-    num_batches = int(jnp.floor(jnp.shape(y)[0]/batch_size))
+    num_batches = int(jnp.floor(len(id_to_idx)/batch_size))
     ids = [i for i in range(len(id_to_idx))]
 
     x_batches = []
@@ -116,22 +116,16 @@ def get_grouped_batches(x, y, id_to_idx, batch_size, key):
         y_batch = []
         id_batch = []
         
-        while len(x_batch) < batch_size:
 
-            key, subkey = jax.random.split(key)
-            id = jax.random.choice(subkey, jnp.array(ids))
-            idxs = id_to_idx[id]
-            if len(idxs) > 1:
-                print("hoi")
+        key, subkey = jax.random.split(key)
+        sample_ids = np.array(jax.random.choice(subkey, jnp.array(ids), shape=(batch_size,), replace=False))
+        for id in sample_ids:
+            for idx in id_to_idx[id]:
+                x_batch.append(jnp.reshape(x[idx, :, :, :], (1,28,28,1)))
+                y_batch.append(y[idx])
+                id_batch.append(id)
 
-            if len(x_batch) + len(idxs) > batch_size:
-                continue
-
-            x_batch.extend([jnp.reshape(x[idx, :, :, :], (1,28,28,1)) for idx in idxs])
-            y_batch.extend([y[idx] for idx in idxs])
-            id_batch.extend([id for idx in idxs])
-
-            ids.remove(id)
+        ids = list(set(ids) - set(sample_ids))
         
         x_batch = jnp.vstack(x_batch)
         y_batch = jnp.hstack(y_batch)
