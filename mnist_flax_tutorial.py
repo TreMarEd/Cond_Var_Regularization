@@ -2,7 +2,7 @@
 The following script is currently mostly a copy-paste of the MNIST flax tutorial: https://flax.readthedocs.io/en/latest/quick_start.html
 The code is being adjusted in order to reproduce the MNIST part of https://arxiv.org/abs/1710.11469
 TODO:
-- implement conditional variance regularization including mini batch allocation of (y,id) groups"""
+- implement conditional variance regularization """
 
 import tensorflow as tf
 from flax import linen as nn
@@ -150,6 +150,7 @@ if __name__ == "__main__":
     num_epochs = 20
     batch_size = 120
     learning_rate = 0.01
+    seed = 1
     # number of data points to be augmented by rotation
     c = 200
     # number of original data points in training set, such that number of data points in final training set after augmentaiton is n + c.
@@ -171,7 +172,7 @@ if __name__ == "__main__":
     y_train = jnp.array(y_train).astype(jnp.int32)
     y_test = jnp.array(y_test).astype(jnp.int32)
 
-    key = jax.random.key(0)
+    key = jax.random.key(seed)
     key, subkey = jax.random.split(key)
     indices = jax.random.choice(subkey, jnp.arange(60000), shape=(n,), replace=False)
 
@@ -182,7 +183,7 @@ if __name__ == "__main__":
     aug_indices = jax.random.choice(subkey, jnp.arange(10000), shape=(c,), replace=False)
     
     key, subkey = jax.random.split(key)
-    rot_samples = jax.random.choice(subkey, jnp.array([35, 70]), shape=(c,), replace=True)
+    rot_samples = jax.random.uniform(subkey, shape=(c,), minval=35., maxval=70.)
 
     # list that indexed at relevant id provides list of the indices of all data points with that id
     # note the id of the original data points is set to their index
@@ -202,7 +203,8 @@ if __name__ == "__main__":
     # two test sets will be used to evaluate domain shift invariance: test set 1 is the original MNIST,
     # test set 2 contains the same images but rotated by 35 or 70 degrees with uniform probability
     key, subkey = jax.random.split(key)
-    rot_samples = jax.random.choice(subkey, jnp.array([35, 70]), shape=(10000,), replace=True)
+    rot_samples = jax.random.uniform(subkey, shape=(10000,), minval=35., maxval=70.)
+
     x_test2 = x_test1
 
     # TODO: vectorize this for efficiency
@@ -283,16 +285,28 @@ if __name__ == "__main__":
 
     ################## PLOT LEARNING CURVE ##################
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
-    ax1.set_title('Loss')
+
+    ax1.set_title('CE Loss')
     ax2.set_title('Accuracy')
 
+    dic = {'train': 'train', 'test1': 'orignal MNIST test', 'test2': 'rotated MNIST test'}
     for dataset in ('train', 'test1', 'test2'):
-        ax1.plot(metrics_history[f'{dataset}_loss'], label=f'{dataset}_loss')
-        ax2.plot(metrics_history[f'{dataset}_accuracy'],
-                 label=f'{dataset}_accuracy')
+        ax1.plot(metrics_history[f'{dataset}_loss'], label=f'{dic[dataset]}')
+        ax2.plot(metrics_history[f'{dataset}_accuracy'], label=f'{dic[dataset]}')
+        
+    ax1.set_xlabel("epoch")
+    ax2.set_xlabel("epoch")
+
+    ax1.set_xticks(np.arange(num_epochs, step=2))
+    ax2.set_xticks(np.arange(num_epochs, step=2))
 
     ax1.legend()
     ax2.legend()
+
+    ax1.grid(True)
+    ax2.grid(True)
+
+    
     plt.show()
     plt.clf()
 
