@@ -99,12 +99,49 @@ def compute_metrics(state, images, labels):
 
     return state
 
+# TODO: make this much more efficient, hope that jitting will already help alot
 #@jax.jit
-def get_grouped_batches(x, y, id, batch_size, rng):
-    # draw a random id wo replacement out of the 10000, add it to the badge and keep count of the badge size. 
-    # => split how does one propagate the rng?
-    # TODO: implement this function
-    pass
+def get_grouped_batches(x, y, id_to_idx, batch_size, key):
+
+    num_batches = int(jnp.floor(jnp.shape(y)[0]/batch_size))
+    ids = [i for i in range(len(id_to_idx))]
+
+    x_batches = []
+    y_batches = []
+    id_batches = []
+
+    for i in range(num_batches):
+
+        x_batch = []
+        y_batch = []
+        id_batch = []
+        
+        while len(x_batch) < batch_size:
+
+            key, subkey = jax.random.split(key)
+            id = jax.random.choice(subkey, jnp.array(ids))
+            idxs = id_to_idx[id]
+            if len(idxs) > 1:
+                print("hoi")
+
+            if len(x_batch) + len(idxs) > batch_size:
+                continue
+
+            x_batch.extend([jnp.reshape(x[idx, :, :, :], (1,28,28,1)) for idx in idxs])
+            y_batch.extend([y[idx] for idx in idxs])
+            id_batch.extend([id for idx in idxs])
+
+            ids.remove(id)
+        
+        x_batch = jnp.vstack(x_batch)
+        y_batch = jnp.hstack(y_batch)
+        id_batch = jnp.hstack(id_batch)
+
+        x_batches.append(x_batch)
+        y_batches.append(y_batch)
+        id_batches.append(id_batch)
+
+    return x_batches, y_batches, id_batches
 
 
 @jax.jit
@@ -116,7 +153,7 @@ def pred_step(state, images):
 if __name__ == "__main__":
 
     ################## DEFINE FREE PARAMETES  ##################
-    num_epochs = 6
+    num_epochs = 20
     batch_size = 120
     learning_rate = 0.01
     # number of data points to be augmented by rotation
@@ -129,8 +166,6 @@ if __name__ == "__main__":
     ################## MNIST DATA AUGMENTATION ##################
     print("\n #################### AUGMENTING MNIST DATA #################### \n")
 
-    # TODO: implement test set 1 and test set 2
-    # TODO: properly handle the JAX rngs
     # TODO: data augmentation takes way too long, either write out the data and read it in or improve efficiency
     (x_train, y_train), (x_test1, y_test) = keras.datasets.mnist.load_data()
 
@@ -142,16 +177,18 @@ if __name__ == "__main__":
     y_train = jnp.array(y_train).astype(jnp.int32)
     y_test = jnp.array(y_test).astype(jnp.int32)
 
-    rng = jax.random.key(0)
-    indices = jax.random.choice(rng, jnp.arange(60000), shape=(n,), replace=False)
+    key = jax.random.key(0)
+    key, subkey = jax.random.split(key)
+    indices = jax.random.choice(subkey, jnp.arange(60000), shape=(n,), replace=False)
 
     x_train = x_train[indices, :, :, :]
     y_train = y_train[indices]
+
+    key, subkey = jax.random.split(key)
+    aug_indices = jax.random.choice(subkey, jnp.arange(10000), shape=(c,), replace=False)
     
-    rng = jax.random.key(1)
-    aug_indices = jax.random.choice(rng, jnp.arange(10000), shape=(c,), replace=False)
-    rng = jax.random.key(2)
-    rot_samples = jax.random.choice(rng, jnp.array([35, 70]), shape=(c,), replace=True)
+    key, subkey = jax.random.split(key)
+    rot_samples = jax.random.choice(subkey, jnp.array([35, 70]), shape=(c,), replace=True)
 
     # list that indexed at relevant id provides list of the indices of all data points with that id
     # note the id of the original data points is set to their index
@@ -168,23 +205,30 @@ if __name__ == "__main__":
 
     y_train = jnp.hstack((y_train, y_train[aug_indices]))
 
+    """
     # two test sets will be used to evaluate domain shift invariance: test set 1 is the original MNIST,
     # test set 2 contains the same images but rotated by 35 or 70 degrees with uniform probability
-    rng = jax.random.key(3)
-    rot_samples = jax.random.choice(rng, jnp.array([35, 70]), shape=(10000,), replace=True)
+    key, subkey = jax.random.split(key)
+    rot_samples = jax.random.choice(subkey, jnp.array([35, 70]), shape=(10000,), replace=True)
     x_test2 = x_test1
 
     # TODO: vectorize this
+    
     for i in range(10000):
         new_img = ndimage.rotate(x_test1[i, :, :, :], rot_samples[i], reshape=False)
         x_test2 = x_test2.at[i, :, :, :].set(new_img)
+    """
+
+    ########################### TEST BATCH CREATION ############################
+    x_batches, y_batches, id_batches = get_grouped_batches(x_train, y_train, id_to_idx, batch_size, key)
 
     ################## TRAINING ##################
-    print("\n #################### AUGMENTING MNIST DATA #################### \n")
+    print("\n #################### START TRAINING #################### \n")
 
     tf.random.set_seed(0)
     cnn = CNN()
-    rng = jax.random.key(4)
+    key, subkey = jax.random.split(key)
+    state = create_train_state(cnn, subkey, learning_rate)
     steps_per_epoch = jnp.ceil(jnp.shape(y_train)[0] / batch_size)
     steps_per_epoch = int(steps_per_epoch)
 
