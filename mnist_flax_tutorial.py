@@ -123,6 +123,8 @@ if __name__ == "__main__":
     c = 200
     # number of original data points in training set, such that number of data points in final training set after augmentaiton is n + c.
     n = 10000
+    # regularization parameter
+    l = 1
 
     ################## MNIST DATA AUGMENTATION ##################
     print("\n #################### AUGMENTING MNIST DATA #################### \n")
@@ -215,7 +217,7 @@ if __name__ == "__main__":
             # Compute metrics on the test set after each training epoch
             # need to make a copy of the current training state because the saved metrics will be overwritten
             test_state = state
-            test_state = compute_metrics(test_state, x_test, y_test)
+            test_state = compute_metrics(test_state, x_test1, y_test)
 
             for metric, value in test_state.metrics.compute().items():
                 metrics_history[f'test_{metric}'].append(value)
@@ -243,4 +245,4 @@ if __name__ == "__main__":
     plt.show()
     plt.clf()
 
-    pred = pred_step(state, x_test)
+    pred = pred_step(state, x_test1)
