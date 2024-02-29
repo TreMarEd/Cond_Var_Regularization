@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 import keras
 from scipy import ndimage
 import numpy as np
+from functools import partial
 
 
 class CNN(nn.Module):
@@ -25,8 +26,6 @@ class CNN(nn.Module):
     def __call__(self, x):
         x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
         x = nn.relu(x)
-        # unclear whether Heinze uses avg or max pool or any pooling at all
-        #x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
         x = nn.Conv(features=32, kernel_size=(5, 5), strides=2)(x)
         x = nn.relu(x)
         x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
@@ -46,8 +45,6 @@ class Metrics(metrics.Collection):
 
 # it is not readable here but the training state will actually consist of:
 # a forward pass function, model parameters, an optimizer and values of the metrics chosen above
-
-
 class TrainState(train_state.TrainState):
     metrics: Metrics
 
@@ -62,17 +59,33 @@ def create_train_state(module, rng, learning_rate):
     return TrainState.create(apply_fn=module.apply, params=_params, tx=tx, metrics=Metrics.empty())
 
 
-@jax.jit
-def train_step(state, images, labels):
+#@jax.jit
+def train_step(state, images, labels, ids, l):
     """Train for a single step."""
+    # id deterministically determiney y for MNIST, so the (y, id) groups are equivalent to id groups
+    unique_ids = jnp.unique(ids)
+    m = len(unique_ids)
 
     def loss_fn(params_):
 
         logits = state.apply_fn({'params': params_}, images)
+        pred_logits = logits.max(axis=1)
+
+        # m is the number of different id groups in the batch
+        
+        vars = jnp.empty(m)
+
+        for i, id in enumerate(unique_ids):
+            # contrary to jax documentation, jnp.where returns a tuple, which needs to be converted to an jnp.array for jnp.take, 
+            # which needs to be jnp.squeezed to have no redundant dimensions
+            idxs =  jnp.squeeze(jnp.array(jnp.where(ids==id)))
+            var = jnp.nanvar(jax.numpy.take(pred_logits, idxs))
+            vars = vars.at[i].set(var)
+        
+        C = jnp.mean(vars)
 
         # TODO: include conditional variance penalty
-        loss = optax.softmax_cross_entropy_with_integer_labels(
-            logits=logits, labels=labels).mean()
+        loss = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=labels).mean() + l * C     
 
         return loss
 
@@ -83,14 +96,27 @@ def train_step(state, images, labels):
     return state
 
 
-@jax.jit
-def compute_metrics(state, images, labels):
-
+#@jax.jit
+def compute_metrics(state, images, labels, ids, l):
+    unique_ids = jnp.unique(ids)
+    m = len(unique_ids)
     logits = state.apply_fn({'params': state.params}, images)
+    pred_logits = logits.max(axis=1)
 
-    # TODO: include conditional variance penalty
+    # m is the number of different id groups in the batch
+    vars = jnp.empty(m)
+
+    for i, id in enumerate(unique_ids):
+        # contrary to jax documentation, jnp.where returns a tuple, which needs to be converted to an jnp.array for jnp.take, 
+        # which needs to be jnp.squeezed to have no redundant dimensions
+        idxs =  jnp.squeeze(jnp.array(jnp.where(ids==id)))
+        var = jnp.nanvar(jax.numpy.take(pred_logits, idxs))
+        vars = vars.at[i].set(var)
+        
+    C = jnp.mean(vars)
+
     loss = optax.softmax_cross_entropy_with_integer_labels(
-        logits=logits, labels=labels).mean()
+        logits=logits, labels=labels).mean() + l*C
 
     # can't find any documentation on what "single_from_model_output" does except for literal source code
     metric_updates = state.metrics.single_from_model_output(
@@ -101,7 +127,7 @@ def compute_metrics(state, images, labels):
     return state
 
 # TODO: find out how to jit this without error
-#@jax.jit
+#@partial(jax.jit, static_argnums=3)
 def get_grouped_batches(x, y, id_to_idx, batch_size, key):
 
     num_batches = jnp.floor(len(id_to_idx)/batch_size)
@@ -112,7 +138,7 @@ def get_grouped_batches(x, y, id_to_idx, batch_size, key):
     y_batches = []
     id_batches = []
 
-    for i in range(num_batches):
+    for i in jnp.arange(num_batches):
 
         x_batch = []
         y_batch = []
@@ -121,6 +147,7 @@ def get_grouped_batches(x, y, id_to_idx, batch_size, key):
         key, subkey = jax.random.split(key)
         sample_ids = np.array(jax.random.choice(
             subkey, jnp.array(ids), shape=(batch_size,), replace=False))
+        
         for id in sample_ids:
             for idx in id_to_idx[id]:
                 x_batch.append(jnp.reshape(x[idx, :, :, :], (1, 28, 28, 1)))
@@ -153,7 +180,7 @@ if __name__ == "__main__":
     batch_size = 120
     learning_rate = 0.007
     # regularization parameter
-    l = 1
+    l = 100
     seed = 2134
     # number of data points to be augmented by rotation
     c = 200
@@ -239,9 +266,10 @@ if __name__ == "__main__":
         for j in range(len(x_batches)):
             train_images = x_batches[j]
             train_labels = y_batches[j]
+            train_ids = id_batches[j]
 
-            state = train_step(state, train_images, train_labels)
-            state = compute_metrics(state, train_images, train_labels)
+            state = train_step(state, train_images, train_labels, train_ids, l)
+            state = compute_metrics(state, train_images, train_labels, train_ids, l)
 
         # again: cant find any info on what metrics.compute() actually does except source code.
         # from source code I gather that it performs averaging s.t. it averages over the metrics
@@ -254,11 +282,13 @@ if __name__ == "__main__":
 
         # Compute metrics on the test set after each training epoch
         # need to make a copy of the current training state because the saved metrics will be overwritten
+        
+        #TODO: need to pass ids of test data: trivial as no non-trivial groups are contained
         test1_state = state
-        test1_state = compute_metrics(test1_state, x_test1, y_test)
+        test1_state = compute_metrics(test1_state, x_test1, y_test, ids=jnp.arange(10000), l=l)
 
         test2_state = state
-        test2_state = compute_metrics(test2_state, x_test2, y_test)
+        test2_state = compute_metrics(test2_state, x_test2, y_test, ids=jnp.arange(10000), l=l)
 
         for metric, value in test1_state.metrics.compute().items():
             metrics_history[f'test1_{metric}'].append(value)
@@ -301,7 +331,9 @@ if __name__ == "__main__":
 
     ax1.grid(True)
     ax2.grid(True)
+
     plt.savefig(".\learning_curve.png")
+
     plt.show()
     plt.clf()
 
