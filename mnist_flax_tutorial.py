@@ -26,7 +26,7 @@ class CNN(nn.Module):
         x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
         x = nn.relu(x)
         # unclear whether Heinze uses avg or max pool or any pooling at all
-        x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
+        #x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
         x = nn.Conv(features=32, kernel_size=(5, 5), strides=2)(x)
         x = nn.relu(x)
         x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
