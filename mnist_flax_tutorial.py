@@ -28,7 +28,7 @@ class CNN(nn.Module):
         x = nn.relu(x)
         x = nn.Conv(features=32, kernel_size=(5, 5), strides=2)(x)
         x = nn.relu(x)
-        x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
+        #x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
         # flatten for classification layer
         x = x.reshape((x.shape[0], -1))
         x = nn.Dense(features=10)(x)
@@ -69,21 +69,21 @@ def train_step(state, images, labels, ids, l):
     def loss_fn(params_):
 
         logits = state.apply_fn({'params': params_}, images)
-        pred_logits = logits.max(axis=1)
 
-        # m is the number of different id groups in the batch
-        
-        vars = jnp.empty(m)
+        C = 0
 
-        for i, id in enumerate(unique_ids):
+        for id in unique_ids:
             # contrary to jax documentation, jnp.where returns a tuple, which needs to be converted to an jnp.array for jnp.take, 
             # which needs to be jnp.squeezed to have no redundant dimensions
-            idxs =  jnp.squeeze(jnp.array(jnp.where(ids==id)))
-            var = jnp.nanvar(jax.numpy.take(pred_logits, idxs))
-            vars = vars.at[i].set(var)
+            idxs =  jnp.array(jnp.where(ids==id))
+            if jnp.shape(idxs)[1]==1:
+                continue
+            else:
+                vars = jnp.nanvar(jnp.squeeze(jnp.take(logits, idxs, axis=0)), axis=0)
+                C = C + jnp.sum(vars)
         
-        C = jnp.mean(vars)
-
+        C = C/m
+       
         # TODO: include conditional variance penalty
         loss = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=labels).mean() + l * C     
 
@@ -101,19 +101,22 @@ def compute_metrics(state, images, labels, ids, l):
     unique_ids = jnp.unique(ids)
     m = len(unique_ids)
     logits = state.apply_fn({'params': state.params}, images)
-    pred_logits = logits.max(axis=1)
 
     # m is the number of different id groups in the batch
-    vars = jnp.empty(m)
 
-    for i, id in enumerate(unique_ids):
+    C = 0
+
+    for id in unique_ids:
         # contrary to jax documentation, jnp.where returns a tuple, which needs to be converted to an jnp.array for jnp.take, 
         # which needs to be jnp.squeezed to have no redundant dimensions
-        idxs =  jnp.squeeze(jnp.array(jnp.where(ids==id)))
-        var = jnp.nanvar(jax.numpy.take(pred_logits, idxs))
-        vars = vars.at[i].set(var)
+        idxs =  jnp.array(jnp.where(ids==id))
+        if jnp.shape(idxs)[1]==1:
+            continue
+        else:
+            vars = jnp.nanvar(jnp.squeeze(jnp.take(logits, idxs, axis=0)), axis=0)
+            C = C + jnp.sum(vars)
         
-    C = jnp.mean(vars)
+    C = C/m
 
     loss = optax.softmax_cross_entropy_with_integer_labels(
         logits=logits, labels=labels).mean() + l*C
@@ -176,11 +179,11 @@ def pred_step(state, images):
 if __name__ == "__main__":
 
     ################## DEFINE FREE PARAMETES  ##################
-    num_epochs = 20
+    num_epochs = 10
     batch_size = 120
     learning_rate = 0.007
     # regularization parameter
-    l = 100
+    l = 10
     seed = 2134
     # number of data points to be augmented by rotation
     c = 200
