@@ -179,11 +179,11 @@ def pred_step(state, images):
 if __name__ == "__main__":
 
     ################## DEFINE FREE PARAMETES  ##################
-    num_epochs = 10
+    num_epochs = 20
     batch_size = 120
-    learning_rate = 0.007
+    learning_rate = 0.004
     # regularization parameter
-    l = 10
+    l = 0.008
     seed = 2134
     # number of data points to be augmented by rotation
     c = 200
@@ -335,7 +335,7 @@ if __name__ == "__main__":
     ax1.grid(True)
     ax2.grid(True)
 
-    plt.savefig(".\learning_curve.png")
+    plt.savefig(".\learning_curve_l0008_lr0004.png")
 
     plt.show()
     plt.clf()
