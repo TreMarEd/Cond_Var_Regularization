@@ -28,11 +28,12 @@ class CNN(nn.Module):
         x = nn.relu(x)
         x = nn.Conv(features=32, kernel_size=(5, 5), strides=2)(x)
         x = nn.relu(x)
-        #x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
+        x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
         # flatten for classification layer
         x = x.reshape((x.shape[0], -1))
+        e = x
         x = nn.Dense(features=10)(x)
-        return x
+        return x, e
 
 
 # the Metrics class contains all metrics that we wish to save in the training state
@@ -68,7 +69,7 @@ def train_step(state, images, labels, ids, l):
 
     def loss_fn(params_):
 
-        logits = state.apply_fn({'params': params_}, images)
+        logits, repr = state.apply_fn({'params': params_}, images)
 
         C = 0
 
@@ -79,7 +80,7 @@ def train_step(state, images, labels, ids, l):
             if jnp.shape(idxs)[1]==1:
                 continue
             else:
-                vars = jnp.nanvar(jnp.squeeze(jnp.take(logits, idxs, axis=0)), axis=0)
+                vars = jnp.nanvar(jnp.squeeze(jnp.take(repr, idxs, axis=0)), axis=0)
                 C = C + jnp.sum(vars)
         
         C = C/m
@@ -100,7 +101,7 @@ def train_step(state, images, labels, ids, l):
 def compute_metrics(state, images, labels, ids, l):
     unique_ids = jnp.unique(ids)
     m = len(unique_ids)
-    logits = state.apply_fn({'params': state.params}, images)
+    logits, repr = state.apply_fn({'params': state.params}, images)
 
     # m is the number of different id groups in the batch
 
@@ -113,7 +114,7 @@ def compute_metrics(state, images, labels, ids, l):
         if jnp.shape(idxs)[1]==1:
             continue
         else:
-            vars = jnp.nanvar(jnp.squeeze(jnp.take(logits, idxs, axis=0)), axis=0)
+            vars = jnp.nanvar(jnp.squeeze(jnp.take(repr, idxs, axis=0)), axis=0)
             C = C + jnp.sum(vars)
         
     C = C/m
@@ -172,23 +173,23 @@ def get_grouped_batches(x, y, id_to_idx, batch_size, key):
 
 @jax.jit
 def pred_step(state, images):
-    logits = state.apply_fn({'params': state.params}, images)
+    logits, repr = state.apply_fn({'params': state.params}, images)
     return logits.argmax(axis=1)
 
 
 if __name__ == "__main__":
 
     ################## DEFINE FREE PARAMETES  ##################
-    num_epochs = 20
+    num_epochs = 10
     batch_size = 120
-    learning_rate = 0.004
+    learning_rate = 0.008
     # regularization parameter
-    l = 0.008
-    seed = 2134
+    l = 10
+    seed = 213
     # number of data points to be augmented by rotation
-    c = 200
+    c = 1000
     # number of original data points in training set, such that number of data points in final training set after augmentaiton is n + c.
-    n = 10000
+    n = 20000
 
     ################## MNIST DATA AUGMENTATION ##################
     print("\n #################### AUGMENTING MNIST DATA #################### \n")
@@ -308,7 +309,7 @@ if __name__ == "__main__":
         print(f"test2 epoch: {i+1}, "f"loss: {metrics_history['test2_loss'][-1]}, "
               f"accuracy: {metrics_history['test2_accuracy'][-1] * 100}")
 
-        print("\n############################################################# \n")
+        print("#############################################################")
 
     ################## PLOT LEARNING CURVE ##################
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
@@ -335,7 +336,7 @@ if __name__ == "__main__":
     ax1.grid(True)
     ax2.grid(True)
 
-    plt.savefig(".\learning_curve_l0008_lr0004.png")
+    plt.savefig(f".\learning_curve_CVR_l10_c1k_n20k_wPool.png")
 
     plt.show()
     plt.clf()
