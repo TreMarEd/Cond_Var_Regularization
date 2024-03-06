@@ -62,17 +62,14 @@ def create_train_state(module, rng, learning_rate):
     return TrainState.create(apply_fn=module.apply, params=_params, tx=tx, metrics=Metrics.empty())
 
 
-#@jax.jit
-def train_step(state, images, labels, ids, l):
-    # state: static shape with no control flow statement depening on its values => jittable
-    # images, labels, ids: not static: they have one variable dimension >=120. # TODO: Rewrite batch generation to be statically 120
-    # l: static shape with no control flow statement depening on its values => jittable
+@partial(jax.jit, static_argnums=(3,4))
+def train_step(state, images, labels, d, l):
     """Train for a single step."""
-    # id deterministically determiney y for MNIST, so the (y, id) groups are equivalent to id groups
 
-    # unique_ids is traced because I use jnp.unique. However, its shape is not static so it will throw an error
-    unique_ids = jnp.unique(ids)
-    m = len(unique_ids)
+    # number of groups in batch
+    m = jnp.shape(images)[0] - d
+    # number of consecutive singleton entries
+    n_t = m - d
 
     def loss_fn(params_):
 
@@ -80,15 +77,10 @@ def train_step(state, images, labels, ids, l):
 
         C = 0
 
-        for id in unique_ids:
-            # contrary to jax documentation, jnp.where returns a tuple, which needs to be converted to an jnp.array 
-            # idxs is traced because I use jnp.array, however its shape is not static
-            idxs =  jnp.array(jnp.where(ids==id))
-            if jnp.shape(idxs)[1]==1:
-                continue
-            else:
-                vars = jnp.nanvar(jnp.squeeze(jnp.take(logits, idxs, axis=0)), axis=0)
-                C = C + jnp.sum(vars)
+        for i in range(d):
+            idxs = jnp.array([n_t + 2*i, n_t + 2*i + 1])
+            vars = jnp.nanvar(jnp.squeeze(jnp.take(logits, idxs, axis=0)), axis=0)
+            C = C + jnp.sum(vars)
         
         C = C/m
        
@@ -103,33 +95,27 @@ def train_step(state, images, labels, ids, l):
     return state
 
 
-#@jax.jit
-def compute_metrics(state, images, labels, ids, l):
-    # state: static shape with no control flow statement depening on its values => jittable
-    # images, labels, ids: not static: they have one variable dimension which is 120 if training
-    # l: static shape with no control flow statement depening on its values => jittable
-    unique_ids = jnp.unique(ids)
-    m = len(unique_ids)
-    logits = state.apply_fn({'params': state.params}, images)
+@partial(jax.jit, static_argnums=(3,4))
+def compute_metrics(state, images, labels, d, l):
 
-    # m is the number of different id groups in the batch
+    # number of groups in batch
+    m = jnp.shape(images)[0] - d
+
+    # number of consecutive singleton entries
+    n_t = m - d
+
+    logits = state.apply_fn({'params': state.params}, images)
 
     C = 0
 
-    for id in unique_ids:
-        # contrary to jax documentation, jnp.where returns a tuple, which needs to be converted to an jnp.array for jnp.take, 
-        # which needs to be jnp.squeezed to have no redundant dimensions
-        idxs =  jnp.array(jnp.where(ids==id))
-        if jnp.shape(idxs)[1]==1:
-            continue
-        else:
-            vars = jnp.nanvar(jnp.squeeze(jnp.take(logits, idxs, axis=0)), axis=0)
-            C = C + jnp.sum(vars)
+    for i in range(d):
+        idxs = jnp.array([n_t + 2*i, n_t + 2*i + 1])
+        vars = jnp.nanvar(jnp.squeeze(jnp.take(logits, idxs, axis=0)), axis=0)
+        C = C + jnp.sum(vars)
         
     C = C/m
 
-    loss = optax.softmax_cross_entropy_with_integer_labels(
-        logits=logits, labels=labels).mean() + l*C
+    loss = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=labels).mean() + l*C
 
     # can't find any documentation on what "single_from_model_output" does except for literal source code
     metric_updates = state.metrics.single_from_model_output(logits=logits, labels=labels, loss=loss)
@@ -187,7 +173,7 @@ def get_grouped_batches(x, y, x_orig, y_orig, x_aug, key, batch_size, num_batche
             y_batches = y_batches.at[i, n_t +(2*j)+1].set(y_orig_perm[d*i + j])
 
 
-    return x_batches, y_batches
+    return x_batches, y_batches.astype(jnp.int32)
 
 
               
@@ -202,13 +188,13 @@ def pred_step(state, images):
 if __name__ == "__main__":
 
     ################## DEFINE FREE PARAMETES  ##################
-    num_epochs = 20
+    num_epochs = 25
     # 102 is ideal for n=10000 and c = 200
     batch_size = 102
-    learning_rate = 0.008
+    learning_rate = 0.005
     # regularization parameter
-    l = 1
-    seed = 2134
+    l = 10
+    seed = 234
     # number of data points to be augmented by rotation
     c = 200
     # number of original data points in training set, such that number of data points in final training set after augmentaiton is n + c.
@@ -253,14 +239,9 @@ if __name__ == "__main__":
     x_aug = jnp.zeros(jnp.shape(x_orig))
 
     for i in range(c):
-
         new_img = ndimage.rotate(x_orig[i, :, :, :], rot_samples[i], reshape=False)
         x_aug = x_aug.at[i, :, :, :].set(new_img)
 
-    key, subkey = jax.random.split(key)
-    key, batch_size, num_batches, d
-    
-    #x_batches, y_batches = get_grouped_batches(x, y, x_orig, y_orig, x_aug, key, batch_size, num_batches, d)
 
     # two test sets will be used to evaluate domain shift invariance: test set 1 is the original MNIST,
     # test set 2 contains the same images but rotated by 35 or 70 degrees with uniform probability
@@ -287,15 +268,14 @@ if __name__ == "__main__":
     for i in range(num_epochs):
 
         key, subkey = jax.random.split(key)
-        x_batches, y_batches, id_batches = get_grouped_batches(x_train, y_train, id_to_idx, batch_size, subkey)
+        x_batches, y_batches = get_grouped_batches(x, y, x_orig, y_orig, x_aug, key, batch_size, num_batches, d)
 
-        for j in range(len(x_batches)):
+        for j in range(num_batches):
             train_images = x_batches[j]
             train_labels = y_batches[j]
-            train_ids = id_batches[j]
 
-            state = train_step(state, train_images, train_labels, train_ids, l)
-            state = compute_metrics(state, train_images, train_labels, train_ids, l)
+            state = train_step(state, train_images, train_labels, d, l)
+            state = compute_metrics(state, train_images, train_labels, d, l)
 
         # again: cant find any info on what metrics.compute() actually does except source code.
         # from source code I gather that it performs averaging s.t. it averages over the metrics
@@ -309,12 +289,11 @@ if __name__ == "__main__":
         # Compute metrics on the test set after each training epoch
         # need to make a copy of the current training state because the saved metrics will be overwritten
         
-        #TODO: need to pass ids of test data: trivial as no non-trivial groups are contained
         test1_state = state
-        test1_state = compute_metrics(test1_state, x_test1, y_test, ids=jnp.arange(10000), l=l)
+        test1_state = compute_metrics(test1_state, x_test1, y_test, d=0, l=l)
 
         test2_state = state
-        test2_state = compute_metrics(test2_state, x_test2, y_test, ids=jnp.arange(10000), l=l)
+        test2_state = compute_metrics(test2_state, x_test2, y_test, d=0, l=l)
 
         for metric, value in test1_state.metrics.compute().items():
             metrics_history[f'test1_{metric}'].append(value)
