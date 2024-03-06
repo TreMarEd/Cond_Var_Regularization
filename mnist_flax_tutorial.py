@@ -2,7 +2,10 @@
 The following script is currently mostly a copy-paste of the MNIST flax tutorial: https://flax.readthedocs.io/en/latest/quick_start.html
 The code is being adjusted in order to reproduce the MNIST part of https://arxiv.org/abs/1710.11469
 TODO:
-- implement conditional variance regularization """
+- rewrite s.t. everything is jittable
+- implement trian vali test split for regulaization selection, including a function to be called to train for a specific parameter
+- general cosmetics: comments, docstrings, annotations, modularization
+"""
 
 import tensorflow as tf
 from flax import linen as nn
@@ -61,8 +64,13 @@ def create_train_state(module, rng, learning_rate):
 
 #@jax.jit
 def train_step(state, images, labels, ids, l):
+    # state: static shape with no control flow statement depening on its values => jittable
+    # images, labels, ids: not static: they have one variable dimension >=120. # TODO: Rewrite batch generation to be statically 120
+    # l: static shape with no control flow statement depening on its values => jittable
     """Train for a single step."""
     # id deterministically determiney y for MNIST, so the (y, id) groups are equivalent to id groups
+
+    # unique_ids is traced because I use jnp.unique. However, its shape is not static so it will throw an error
     unique_ids = jnp.unique(ids)
     m = len(unique_ids)
 
@@ -73,8 +81,8 @@ def train_step(state, images, labels, ids, l):
         C = 0
 
         for id in unique_ids:
-            # contrary to jax documentation, jnp.where returns a tuple, which needs to be converted to an jnp.array for jnp.take, 
-            # which needs to be jnp.squeezed to have no redundant dimensions
+            # contrary to jax documentation, jnp.where returns a tuple, which needs to be converted to an jnp.array 
+            # idxs is traced because I use jnp.array, however its shape is not static
             idxs =  jnp.array(jnp.where(ids==id))
             if jnp.shape(idxs)[1]==1:
                 continue
@@ -84,7 +92,6 @@ def train_step(state, images, labels, ids, l):
         
         C = C/m
        
-        # TODO: include conditional variance penalty
         loss = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=labels).mean() + l * C     
 
         return loss
@@ -98,6 +105,9 @@ def train_step(state, images, labels, ids, l):
 
 #@jax.jit
 def compute_metrics(state, images, labels, ids, l):
+    # state: static shape with no control flow statement depening on its values => jittable
+    # images, labels, ids: not static: they have one variable dimension which is 120 if training
+    # l: static shape with no control flow statement depening on its values => jittable
     unique_ids = jnp.unique(ids)
     m = len(unique_ids)
     logits = state.apply_fn({'params': state.params}, images)
@@ -122,52 +132,67 @@ def compute_metrics(state, images, labels, ids, l):
         logits=logits, labels=labels).mean() + l*C
 
     # can't find any documentation on what "single_from_model_output" does except for literal source code
-    metric_updates = state.metrics.single_from_model_output(
-        logits=logits, labels=labels, loss=loss)
+    metric_updates = state.metrics.single_from_model_output(logits=logits, labels=labels, loss=loss)
     metrics = state.metrics.merge(metric_updates)
     state = state.replace(metrics=metrics)
 
     return state
 
-# TODO: find out how to jit this without error
-#@partial(jax.jit, static_argnums=3)
-def get_grouped_batches(x, y, id_to_idx, batch_size, key):
 
-    num_batches = jnp.floor(len(id_to_idx)/batch_size)
-    num_batches = num_batches.astype(int)
-    ids = [i for i in range(len(id_to_idx))]
+@partial(jax.jit, static_argnums=(6,7,8))
+def get_grouped_batches(x, y, x_orig, y_orig, x_aug, key, batch_size, num_batches, d):
 
-    x_batches = []
-    y_batches = []
-    id_batches = []
+    # number of datapoints per batch that do not belong to a group with more than 1 member (t for trivial)
+    # factor 2 comes from fact that each non-trivial group has size 2
+    n_t = batch_size - 2*d
 
-    for i in jnp.arange(num_batches):
+    key, subkey = jax.random.split(key)
+    idxs = jax.random.permutation(subkey, jnp.shape(x)[0])
+    x_perm = jnp.take(x, idxs, axis=0)
+    y_perm = jnp.take(y, idxs, axis=0)
 
-        x_batch = []
-        y_batch = []
-        id_batch = []
+    key, subkey = jax.random.split(key)
+    idxs = jax.random.permutation(subkey, jnp.shape(x_orig)[0])
+    x_orig_perm = jnp.take(x_orig, idxs, axis=0)
+    x_aug_perm = jnp.take(x_aug, idxs, axis=0)
+    y_orig_perm = jnp.take(y_orig, idxs, axis=0)
 
-        key, subkey = jax.random.split(key)
-        sample_ids = np.array(jax.random.choice(
-            subkey, jnp.array(ids), shape=(batch_size,), replace=False))
-        
-        for id in sample_ids:
-            for idx in id_to_idx[id]:
-                x_batch.append(jnp.reshape(x[idx, :, :, :], (1, 28, 28, 1)))
-                y_batch.append(y[idx])
-                id_batch.append(id)
+    x_batches = jnp.zeros((num_batches, batch_size, 28, 28, 1))
+    y_batches = jnp.zeros((num_batches, batch_size))
 
-        ids = list(set(ids) - set(sample_ids))
+    '''
+    fill the last entries of the batch with the data points form non-trivial groups, where 
+    data points of the same group are consecutive
+    example: 10'000 original data points, of which 200 get augmented, with a batch size of 120
+    this implies 9800 data points that are singletons, and 200 non-singleton groups with 2 members each
+    such that one has 10200 data points. with a batchsize of 120 this implies 85 batches, such that
+    each batch will contain floor(200/85) = 2 non-singletons, corresponding to 4 data points
+    for each batch take 116 data points out of the singletons, and then attach at the end the four
+    non-singleton data points, where points in the same group follow each other
+    '''
 
-        x_batch = jnp.vstack(x_batch)
-        y_batch = jnp.hstack(y_batch)
-        id_batch = jnp.hstack(id_batch)
+    for i in range(num_batches):
+        # fill the first entries of the batch with data points from trivial groups
+        x_batches = x_batches.at[i, :n_t, :, :, :].set(x_perm[i*n_t:(i+1)*n_t, :, :, :])
+        y_batches = y_batches.at[i, :n_t].set(y_perm[i*n_t:(i+1)*n_t])
 
-        x_batches.append(x_batch)
-        y_batches.append(y_batch)
-        id_batches.append(id_batch)
 
-    return x_batches, y_batches, id_batches
+        for j in range(d):
+            # first add the original data point
+            x_batches = x_batches.at[i, n_t + 2*j, :, :, :].set(x_orig_perm[d*i + j, :, :, :])
+            # then add the augmented data point directly afterward
+            x_batches = x_batches.at[i, n_t +(2*j)+1, :, :, :].set(x_aug_perm[d*i + j, :, :, :])
+
+            y_batches = y_batches.at[i, n_t + 2*j].set(y_orig_perm[d*i + j])
+            y_batches = y_batches.at[i, n_t +(2*j)+1].set(y_orig_perm[d*i + j])
+
+
+
+
+    return x_batches, y_batches
+
+
+              
 
 
 @jax.jit
@@ -181,14 +206,18 @@ if __name__ == "__main__":
     ################## DEFINE FREE PARAMETES  ##################
     num_epochs = 20
     batch_size = 120
-    learning_rate = 0.004
+    learning_rate = 0.008
     # regularization parameter
-    l = 0.008
+    l = 1
     seed = 2134
     # number of data points to be augmented by rotation
     c = 200
     # number of original data points in training set, such that number of data points in final training set after augmentaiton is n + c.
     n = 10000
+    num_batches =int(np.floor((n+c)/batch_size))
+    d = int(np.floor(c/num_batches))
+    # with the homogeneous distribution of singleotons and dublettes the last badge will be incomplete and needs to be discarded
+    num_batches = num_batches - 1
 
     ################## MNIST DATA AUGMENTATION ##################
     print("\n #################### AUGMENTING MNIST DATA #################### \n")
@@ -205,48 +234,44 @@ if __name__ == "__main__":
 
     key = jax.random.key(seed)
     key, subkey = jax.random.split(key)
-    indices = jax.random.choice(
-        subkey, jnp.arange(60000), shape=(n,), replace=False)
+    indices = jax.random.choice(subkey, jnp.arange(60000), shape=(n,), replace=False)
 
     x_train = x_train[indices, :, :, :]
     y_train = y_train[indices]
 
     key, subkey = jax.random.split(key)
-    aug_indices = jax.random.choice(
-        subkey, jnp.arange(10000), shape=(c,), replace=False)
+    aug_indices = jax.random.choice(subkey, jnp.arange(10000), shape=(c,), replace=False)
+
+    x_orig = x_train[aug_indices, :, :, :]
+    y_orig = y_train[aug_indices]
+
+    x = jnp.delete(x_train, aug_indices, axis=0)
+    y = jnp.delete(y_train, aug_indices, axis=0)
 
     key, subkey = jax.random.split(key)
-    rot_samples = jax.random.uniform(
-        subkey, shape=(c,), minval=35., maxval=70.)
+    rot_samples = jax.random.uniform(subkey, shape=(c,), minval=35., maxval=70.)
 
-    # list that indexed at relevant id provides list of the indices of all data points with that id
-    # note the id of the original data points is set to their index
-    id_to_idx = [[i] for i in range(n)]
+    x_aug = jnp.zeros(jnp.shape(x_orig))
 
-    for cnt, i in enumerate(aug_indices):
+    for i in range(c):
 
-        new_img = ndimage.rotate(
-            x_train[i, :, :, :], rot_samples[i], reshape=False)
-        new_img = jnp.reshape(new_img, (1, 28, 28, 1))
-        x_train = jnp.vstack((x_train, new_img))
+        new_img = ndimage.rotate(x_orig[i, :, :, :], rot_samples[i], reshape=False)
+        x_aug = x_aug.at[i, :, :, :].set(new_img)
 
-        # add index to the relevant id
-        id_to_idx[i].append(n + cnt)
-
-    y_train = jnp.hstack((y_train, y_train[aug_indices]))
+    key, subkey = jax.random.split(key)
+    key, batch_size, num_batches, d
+    
+    x_batches, y_batches = get_grouped_batches(x, y, x_orig, y_orig, x_aug, key, batch_size, num_batches, d)
 
     # two test sets will be used to evaluate domain shift invariance: test set 1 is the original MNIST,
     # test set 2 contains the same images but rotated by 35 or 70 degrees with uniform probability
     key, subkey = jax.random.split(key)
-    rot_samples = jax.random.uniform(
-        subkey, shape=(10000,), minval=35., maxval=70.)
+    rot_samples = jax.random.uniform(subkey, shape=(10000,), minval=35., maxval=70.)
 
     x_test2 = x_test1
 
-    # TODO: vectorize this for efficiency
     for i in range(10000):
-        new_img = ndimage.rotate(
-            x_test1[i, :, :, :], rot_samples[i], reshape=False)
+        new_img = ndimage.rotate(x_test1[i, :, :, :], rot_samples[i], reshape=False)
         x_test2 = x_test2.at[i, :, :, :].set(new_img)
 
     ################## TRAINING ##################
@@ -263,8 +288,7 @@ if __name__ == "__main__":
     for i in range(num_epochs):
 
         key, subkey = jax.random.split(key)
-        x_batches, y_batches, id_batches = get_grouped_batches(
-            x_train, y_train, id_to_idx, batch_size, subkey)
+        x_batches, y_batches, id_batches = get_grouped_batches(x_train, y_train, id_to_idx, batch_size, subkey)
 
         for j in range(len(x_batches)):
             train_images = x_batches[j]
