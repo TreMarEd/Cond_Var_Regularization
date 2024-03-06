@@ -187,8 +187,6 @@ def get_grouped_batches(x, y, x_orig, y_orig, x_aug, key, batch_size, num_batche
             y_batches = y_batches.at[i, n_t +(2*j)+1].set(y_orig_perm[d*i + j])
 
 
-
-
     return x_batches, y_batches
 
 
@@ -205,7 +203,8 @@ if __name__ == "__main__":
 
     ################## DEFINE FREE PARAMETES  ##################
     num_epochs = 20
-    batch_size = 120
+    # 102 is ideal for n=10000 and c = 200
+    batch_size = 102
     learning_rate = 0.008
     # regularization parameter
     l = 1
@@ -214,10 +213,10 @@ if __name__ == "__main__":
     c = 200
     # number of original data points in training set, such that number of data points in final training set after augmentaiton is n + c.
     n = 10000
-    num_batches =int(np.floor((n+c)/batch_size))
-    d = int(np.floor(c/num_batches))
+    
+    d = int(np.ceil(c/np.floor((n+c)/batch_size)))
+    num_batches = int(np.floor(c/d))
     # with the homogeneous distribution of singleotons and dublettes the last badge will be incomplete and needs to be discarded
-    num_batches = num_batches - 1
 
     ################## MNIST DATA AUGMENTATION ##################
     print("\n #################### AUGMENTING MNIST DATA #################### \n")
@@ -261,7 +260,7 @@ if __name__ == "__main__":
     key, subkey = jax.random.split(key)
     key, batch_size, num_batches, d
     
-    x_batches, y_batches = get_grouped_batches(x, y, x_orig, y_orig, x_aug, key, batch_size, num_batches, d)
+    #x_batches, y_batches = get_grouped_batches(x, y, x_orig, y_orig, x_aug, key, batch_size, num_batches, d)
 
     # two test sets will be used to evaluate domain shift invariance: test set 1 is the original MNIST,
     # test set 2 contains the same images but rotated by 35 or 70 degrees with uniform probability
