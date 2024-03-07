@@ -9,6 +9,7 @@ See README for details.
 
 TODO:
 - implement trian vali test split for regulaization selection, including a function to be called to train for a specific parameter
+- implement separate function for mnis augmentation
 - assert correct combinations of batch_size num_batches and d. Provide guidelines
 - write readme
 - write requirements.txt
@@ -28,6 +29,8 @@ import keras
 from scipy import ndimage
 import numpy as np
 from functools import partial
+import os
+
 
 
 class CNN(nn.Module):
@@ -49,8 +52,6 @@ class Metrics(metrics.Collection):
     '''Metrics class is the attribute of the training state that saves the accuracy and the loss'''
     accuracy: metrics.Accuracy
     loss: metrics.Average.from_output('loss')
-
-# it is not readable here but the
 
 
 class TrainState(train_state.TrainState):
@@ -264,10 +265,108 @@ def pred_step(state, images):
     return logits.argmax(axis=1)
 
 
+def create_aug_mnist(c, seed):
+    """
+    """
+
+    print("\n #################### AUGMENTING MNIST DATA #################### \n")
+
+    n = 10000
+
+    (x, y), (x_test1, y_test) = keras.datasets.mnist.load_data()
+
+    x = jnp.array(x) / 255
+    x_test1 = jnp.array(x_test1) / 255
+
+    x = jnp.reshape(x, (60000, 28, 28, 1))
+    x_test1 = jnp.reshape(x_test1, (10000, 28, 28, 1))
+
+    y = jnp.array(y).astype(jnp.int32)
+    y_test = jnp.array(y_test).astype(jnp.int32)
+
+    key = jax.random.key(seed)
+    key, subkey = jax.random.split(key)
+    indices = jax.random.choice(subkey, jnp.arange(60000), shape=(2*n,), replace=False)
+
+    x_train = x[indices[:n], :, :, :]
+    y_train = y[indices[:n]]
+
+    x_vali = x[indices[n:], :, :, :]
+    y_vali = y[indices[n:]]
+
+    key, subkey = jax.random.split(key)
+    aug_indices = jax.random.choice(subkey, jnp.arange(10000), shape=(c,), replace=False)
+
+    x_train_orig = x_train[aug_indices, :, :, :]
+    y_train_orig = y_train[aug_indices]
+
+    x_train_sing = jnp.delete(x_train, aug_indices, axis=0)
+    y_train_sing = jnp.delete(y_train, aug_indices, axis=0)
+
+    x_vali_orig = x_vali[aug_indices, :, :, :]
+    y_vali_orig = y_vali[aug_indices]
+
+    x_vali_sing = jnp.delete(x_train, aug_indices, axis=0)
+    y_vali_sing = jnp.delete(y_train, aug_indices, axis=0)
+
+    key, subkey = jax.random.split(key)
+    rot_samples_train = jax.random.uniform(subkey, shape=(c,), minval=35., maxval=70.)
+    rot_samples_vali = jax.random.uniform(subkey, shape=(c,), minval=35., maxval=70.)
+
+    x_train_aug = jnp.zeros(jnp.shape(x_train_orig))
+    x_vali_aug = jnp.zeros(jnp.shape(x_vali_orig))
+
+    for i in range(c):
+        new_img = ndimage.rotate(x_train_orig[i, :, :, :], rot_samples_train[i], reshape=False)
+        x_train_aug = x_train_aug.at[i, :, :, :].set(new_img)
+
+        new_img = ndimage.rotate(x_vali_orig[i, :, :, :], rot_samples_vali[i], reshape=False)
+        x_vali_aug = x_vali_aug.at[i, :, :, :].set(new_img)
+
+    # two test sets will be used to evaluate domain shift invariance: test set 1 is the original MNIST,
+    # test set 2 contains the same images but rotated by 35 or 70 degrees with uniform probability
+    key, subkey = jax.random.split(key)
+    rot_samples_test = jax.random.uniform(subkey, shape=(10000,), minval=35., maxval=70.)
+
+    x_test2 = x_test1
+
+    for i in range(n):
+        new_img = ndimage.rotate(x_test1[i, :, :, :], rot_samples_test[i], reshape=False)
+        x_test2 = x_test2.at[i, :, :, :].set(new_img)
+
+    base_path = f".\\augmented_mnist\\seed{seed}_c{c}"
+
+    if not os.path.exists(base_path):
+        os.makedirs(f"{base_path}\\train")
+        os.makedirs(f"{base_path}\\vali")
+        os.makedirs(f"{base_path}\\test")
+        
+    
+    jnp.save(base_path + "\\train\\x_train_sing.npy", x_train_sing)
+    jnp.save(base_path + "\\train\\y_train_sing.npy", y_train_sing)
+    jnp.save(base_path + "\\train\\x_train_orig.npy", x_train_orig)
+    jnp.save(base_path + "\\train\\y_train_orig.npy", y_train_orig)
+    jnp.save(base_path + "\\train\\x_train_aug.npy", x_train_aug)
+
+    jnp.save(base_path + "\\vali\\x_vali_sing.npy", x_vali_sing)
+    jnp.save(base_path + "\\vali\\y_vali_sing.npy", y_vali_sing)
+    jnp.save(base_path + "\\vali\\x_vali_orig.npy", x_vali_orig)
+    jnp.save(base_path + "\\vali\\y_vali_orig.npy", y_vali_orig)
+    jnp.save(base_path + "\\vali\\x_vali_aug.npy", x_vali_aug)
+
+    jnp.save(base_path + "\\test\\x_test1.npy", x_test1)
+    jnp.save(base_path + "\\test\\x_test2.npy", x_test2)
+    jnp.save(base_path + "\\test\\y_test.npy", y_test)
+    
+    return None
+
+
 if __name__ == "__main__":
 
+    train_data, vali_data, test1_data, test2_data = create_aug_mnist(200, 234)
+    
     ################## DEFINE FREE PARAMETES  ##################
-    num_epochs = 25
+    num_epochs = 18
     batch_size = 102
     # number of data points to be augmented by rotation
     c = 200
@@ -278,7 +377,7 @@ if __name__ == "__main__":
     num_batches = int(np.floor(c/d))
     learning_rate = 0.005
     # regularization parameter
-    l = 10
+    l = 5
     seed = 234
     
     ################## MNIST DATA AUGMENTATION ##################
@@ -405,7 +504,7 @@ if __name__ == "__main__":
 
     lr_str = str(learning_rate).replace(".", ",")
     l_str = str(l).replace(".", ",")
-    plt.savefig(f".\learning_curve_lr{lr_str}_l{l_str}_e{num_epochs}_bs{batch_size}.png")
+    plt.savefig(f".\learning_curves\learning_curve_lr{lr_str}_l{l_str}_e{num_epochs}_bs{batch_size}.png")
 
     plt.show()
     plt.clf()
