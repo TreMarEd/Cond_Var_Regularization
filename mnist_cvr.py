@@ -37,9 +37,13 @@ class CNN(nn.Module):
     """A simple CNN model."""
     @nn.compact
     def __call__(self, x):
-        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
-        x = nn.relu(x)
         x = nn.Conv(features=32, kernel_size=(5, 5), strides=2)(x)
+        x = nn.relu(x)
+        x = nn.Conv(features=32, kernel_size=(4, 4), strides=2)(x)
+        x = nn.relu(x)
+        x = nn.Conv(features=16, kernel_size=(3, 3), strides=2)(x)
+        x = nn.relu(x)
+        x = nn.Conv(features=16, kernel_size=(3, 3), strides=2)(x)
         x = nn.relu(x)
         x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
         x = x.reshape((x.shape[0], -1))
@@ -527,7 +531,7 @@ def train_cnn(train_data, vali_data, test1_data, test2_data, num_epochs, learnin
 if __name__ == "__main__":
 
     ################## DEFINE FREE PARAMETES  ##################
-    num_epochs = 10
+    num_epochs = 32
     batch_size = 102
     # number of data points to be augmented by rotation
     c = 200
@@ -538,7 +542,7 @@ if __name__ == "__main__":
     num_batches = int(np.floor(c/d))
     learning_rate = 0.005
     # regularization parameters
-    ls = [0, 0.01, 0.1, 1, 10, 100, 1000]
+    ls = [0, 0.01, 1, 10]
     seed = 2342
     
     key = jax.random.key(seed)
