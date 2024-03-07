@@ -424,40 +424,19 @@ def load_aug_mnist(c, seed):
     return train_data, vali_data, test1_data, test2_data
 
 
-if __name__ == "__main__":
-
-    ################## DEFINE FREE PARAMETES  ##################
-    num_epochs = 18
-    batch_size = 102
-    # number of data points to be augmented by rotation
-    c = 200
-    # number of original data points in training set
-    n = 10000
-    # number of dublett groups per batch
-    d = int(np.ceil(c/np.floor((n+c)/batch_size)))
-    num_batches = int(np.floor(c/d))
-    learning_rate = 0.005
-    # regularization parameter
-    l = 0
-    seed = 234
-    
-    key = jax.random.key(seed)
-    key, subkey = jax.random.split(key)
-
-    ################## LOAD/CREATE DATA ##################
-    train_data, vali_data, test1_data, test2_data = load_aug_mnist(c, 234)
-
-    ################## TRAINING ##################
-    print("\n #################### START TRAINING #################### \n")
-
-    tf.random.set_seed(0)
+def train_cnn(train_data, vali_data, test1_data, test2_data, num_epochs, learning_rate, batch_size, 
+              num_batches, c, n, d, l, key, tf_seed=0):
+    print(f"\n #################### START TRAINING l = {l} ####################\n")
+    tf.random.set_seed(tf_seed)
     cnn = CNN()
     key, subkey = jax.random.split(key)
     state = create_train_state(cnn, subkey, learning_rate)
 
     metrics_history = {'train_loss': [], 'train_accuracy': [], 'vali_loss': [],
-                       'vali_accuracy': [], 'test2_loss': [], 'test2_accuracy': []}
+                       'vali_accuracy': [], 'test1_loss': [], 'test1_accuracy': [],
+                       'test2_loss': [], 'test2_accuracy': []}
 
+    states = []
     for i in range(num_epochs):
 
         key, subkey = jax.random.split(key)
@@ -476,18 +455,24 @@ if __name__ == "__main__":
         for metric, value in state.metrics.compute().items():
             metrics_history[f'train_{metric}'].append(value)
 
-            # reset train_metrics for next training epoch
-            state = state.replace(metrics=state.metrics.empty())
+        # reset train_metrics for next training epoch
+        state = state.replace(metrics=state.metrics.empty())
+        states.append(state)
 
         # Compute metrics on the vali set after each training epoch
         # make copy of  current training state because  saved metrics will be overwritten
-            
-
         vali_state = state
         vali_state = compute_metrics(vali_state, vali_data["features"], vali_data["labels"], d=c, l=l)
 
         for metric, value in vali_state.metrics.compute().items():
             metrics_history[f'vali_{metric}'].append(value)
+        
+        ############################################################################
+        test1_state = state
+        test1_state = compute_metrics(test1_state, test1_data["features"], test1_data["labels"], d=0, l=l)
+
+        for metric, value in test1_state.metrics.compute().items():
+            metrics_history[f'test1_{metric}'].append(value)
 
         test2_state = state
         test2_state = compute_metrics(test2_state, test2_data["features"], test2_data["labels"], d=0, l=l)
@@ -495,9 +480,11 @@ if __name__ == "__main__":
         for metric, value in test2_state.metrics.compute().items():
             metrics_history[f'test2_{metric}'].append(value)
 
-        print(f"train epoch: {i+1}, "f"loss: {metrics_history['train_loss'][-1]}, "f"accuracy: {metrics_history['train_accuracy'][-1] * 100}")
-        print(f"vali epoch: {i+1}, "f"loss: {metrics_history['vali_loss'][-1]}, "f"accuracy: {metrics_history['vali_accuracy'][-1] * 100}")
-        print(f"test2 epoch: {i+1}, "f"loss: {metrics_history['test2_loss'][-1]}, "f"accuracy: {metrics_history['test2_accuracy'][-1] * 100}")
+        print(f"train epoch: {i}, "f"loss: {metrics_history['train_loss'][-1]}, "f"accuracy: {metrics_history['train_accuracy'][-1] * 100}")
+        print(f"vali epoch: {i}, "f"loss: {metrics_history['vali_loss'][-1]}, "f"accuracy: {metrics_history['vali_accuracy'][-1] * 100}")
+        print(f"test1 epoch: {i}, "f"loss: {metrics_history['test1_loss'][-1]}, "f"accuracy: {metrics_history['test1_accuracy'][-1] * 100}")
+        print(f"test2 epoch: {i}, "f"loss: {metrics_history['test2_loss'][-1]}, "f"accuracy: {metrics_history['test2_accuracy'][-1] * 100}")
+
         
         print("\n############################################################# \n")
 
@@ -507,8 +494,8 @@ if __name__ == "__main__":
     ax1.set_title('CE Loss')
     ax2.set_title('Accuracy')
 
-    dic = {'train': 'train', 'vali': 'validation', 'test2': 'rotated test'}
-    for dataset in ('train', 'vali', 'test2'):
+    dic = {'train': 'train', 'vali': 'validation', "test1": "test non-rot", "test2": "test rot"}
+    for dataset in ('train', 'vali', 'test1', 'test2'):
         ax1.plot(metrics_history[f'{dataset}_loss'], label=f'{dic[dataset]}')
         ax2.plot(metrics_history[f'{dataset}_accuracy'], label=f'{dic[dataset]}')
 
@@ -527,8 +514,70 @@ if __name__ == "__main__":
     lr_str = str(learning_rate).replace(".", ",")
     l_str = str(l).replace(".", ",")
     plt.savefig(f".\learning_curves\learning_curve_lr{lr_str}_l{l_str}_e{num_epochs}_bs{batch_size}.png")
-
-    #plt.show()
     plt.clf()
 
-    #pred = pred_step(state, x_test2)
+    best_epoch = max(enumerate(metrics_history['vali_accuracy']), key=lambda x: x[1])[0]
+    best_accuracy = max(metrics_history['vali_accuracy'])
+
+    print(f"best vali epoch: {best_epoch}")
+    print(f"best vali accuracy: {best_accuracy}")
+
+    return states, best_epoch, best_accuracy
+
+if __name__ == "__main__":
+
+    ################## DEFINE FREE PARAMETES  ##################
+    num_epochs = 10
+    batch_size = 102
+    # number of data points to be augmented by rotation
+    c = 200
+    # number of original data points in training set
+    n = 10000
+    # number of dublett groups per batch
+    d = int(np.ceil(c/np.floor((n+c)/batch_size)))
+    num_batches = int(np.floor(c/d))
+    learning_rate = 0.005
+    # regularization parameters
+    ls = [0, 0.01, 0.1, 1, 10, 100, 1000]
+    seed = 234
+    
+    key = jax.random.key(seed)
+    key, subkey = jax.random.split(key)
+
+    ################## LOAD/CREATE DATA ##################
+    train_data, vali_data, test1_data, test2_data = load_aug_mnist(c, 234)
+
+    ################## TRAIN MODEL(S) ##################
+    dic = {}
+    best_l = None
+    best_accuracy = -10
+    
+    for l in ls:
+        states, epoch, accuracy = train_cnn(train_data, vali_data, test1_data, test2_data, num_epochs, learning_rate, batch_size, 
+                                          num_batches, c, n, d, l, key, tf_seed=0)
+        
+        if accuracy > best_accuracy:
+            best_l = l
+            best_accuracy = accuracy
+        
+        dic[str(l)] = {"epoch": None, "accuracy": None, "states": states}
+        dic[str(l)]["epoch"] = epoch
+        dic[str(l)]["accuracy"] = accuracy
+    
+    best_epoch = dic[str(best_l)]["epoch"]
+    print("\n############################################################# \n")
+    print(f"THE BEST REGULRAIZATION PARAMETER IS {best_l} AT EPOCH {best_epoch} WITH VALI ACCURACY {best_accuracy}")
+    
+    state = dic[str(best_l)]["states"][best_epoch]
+    test1_state = state
+    test2_state = state
+
+    test1_state = compute_metrics(test1_state, test1_data["features"], test1_data["labels"], d=0, l=best_l)
+    test2_state = compute_metrics(test2_state, test2_data["features"], test2_data["labels"], d=0, l=best_l)
+
+    test1_accuracy = test1_state.metrics.compute()["accuracy"]
+    test2_accuracy = test2_state.metrics.compute()["accuracy"]
+    print(f"\nACHIEVED NON-ROTATED TEST ACCURACY: {test1_accuracy}")
+    print(f"\nACHIEVED ROTATED TEST ACCURACY: {test2_accuracy}\n")
+
+    
