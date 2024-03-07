@@ -484,8 +484,7 @@ def train_cnn(train_data, vali_data, test1_data, test2_data, num_epochs, learnin
         print(f"vali epoch: {i}, "f"loss: {metrics_history['vali_loss'][-1]}, "f"accuracy: {metrics_history['vali_accuracy'][-1] * 100}")
         print(f"test1 epoch: {i}, "f"loss: {metrics_history['test1_loss'][-1]}, "f"accuracy: {metrics_history['test1_accuracy'][-1] * 100}")
         print(f"test2 epoch: {i}, "f"loss: {metrics_history['test2_loss'][-1]}, "f"accuracy: {metrics_history['test2_accuracy'][-1] * 100}")
-
-        
+   
         print("\n############################################################# \n")
 
     ################## PLOT LEARNING CURVE ##################
@@ -539,13 +538,12 @@ if __name__ == "__main__":
     learning_rate = 0.005
     # regularization parameters
     ls = [0, 0.01, 0.1, 1, 10, 100, 1000]
-    seed = 234
+    seed = 2342
     
     key = jax.random.key(seed)
-    key, subkey = jax.random.split(key)
-
+    
     ################## LOAD/CREATE DATA ##################
-    train_data, vali_data, test1_data, test2_data = load_aug_mnist(c, 234)
+    train_data, vali_data, test1_data, test2_data = load_aug_mnist(c, seed)
 
     ################## TRAIN MODEL(S) ##################
     dic = {}
@@ -553,8 +551,9 @@ if __name__ == "__main__":
     best_accuracy = -10
     
     for l in ls:
+        key, subkey = jax.random.split(key)
         states, epoch, accuracy = train_cnn(train_data, vali_data, test1_data, test2_data, num_epochs, learning_rate, batch_size, 
-                                          num_batches, c, n, d, l, key, tf_seed=0)
+                                          num_batches, c, n, d, l, subkey, tf_seed=0)
         
         if accuracy > best_accuracy:
             best_l = l
@@ -577,6 +576,7 @@ if __name__ == "__main__":
 
     test1_accuracy = test1_state.metrics.compute()["accuracy"]
     test2_accuracy = test2_state.metrics.compute()["accuracy"]
+    
     print(f"\nACHIEVED NON-ROTATED TEST ACCURACY: {test1_accuracy}")
     print(f"\nACHIEVED ROTATED TEST ACCURACY: {test2_accuracy}\n")
 
