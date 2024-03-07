@@ -9,11 +9,11 @@ See README for details.
 
 TODO:
 - implement trian vali test split for regulaization selection, including a function to be called to train for a specific parameter
-- implement separate function for mnis augmentation
 - assert correct combinations of batch_size num_batches and d. Provide guidelines
 - write readme
 - write requirements.txt
 - try cond var of repr
+- save utils in different python files
 """
 
 import tensorflow as tf
@@ -267,6 +267,7 @@ def pred_step(state, images):
 
 def create_aug_mnist(c, seed):
     """
+    TODO: write docstring
     """
 
     print("\n #################### AUGMENTING MNIST DATA #################### \n")
@@ -336,35 +337,95 @@ def create_aug_mnist(c, seed):
 
     base_path = f".\\augmented_mnist\\seed{seed}_c{c}"
 
+    # prepare vali data s.t. dublette data is at the end with data points in same group consecutive to each other
+    n_s = n - c
+
+    x_vali = jnp.zeros((n+c, 28, 28, 1))
+    y_vali = jnp.zeros((n+c))
+
+    x_vali = x_vali.at[:n_s, :, :, :].set(x_vali_sing[:n_s, :, :, :])
+    y_vali = y_vali.at[:n_s].set(y_vali_sing[:n_s])
+
+    for j in range(c):
+        # first add the original data point
+        x_vali = x_vali.at[n_s + 2*j, :, :, :].set(x_vali_orig[j, :, :, :])
+        # then add the augmented data point directly afterward
+        x_vali = x_vali.at[n_s + (2*j)+1, :, :, :].set(x_vali_aug[j, :, :, :])
+
+        y_vali = y_vali.at[n_s + 2*j].set(y_vali_orig[j])
+        # then add the augmented data point directly afterward
+        y_vali = y_vali.at[n_s + (2*j)+1].set(y_vali_orig[j])
+
+    y_vali = y_vali.astype(jnp.int32)
+
     if not os.path.exists(base_path):
         os.makedirs(f"{base_path}\\train")
         os.makedirs(f"{base_path}\\vali")
         os.makedirs(f"{base_path}\\test")
         
-    
     jnp.save(base_path + "\\train\\x_train_sing.npy", x_train_sing)
     jnp.save(base_path + "\\train\\y_train_sing.npy", y_train_sing)
     jnp.save(base_path + "\\train\\x_train_orig.npy", x_train_orig)
     jnp.save(base_path + "\\train\\y_train_orig.npy", y_train_orig)
     jnp.save(base_path + "\\train\\x_train_aug.npy", x_train_aug)
 
-    jnp.save(base_path + "\\vali\\x_vali_sing.npy", x_vali_sing)
-    jnp.save(base_path + "\\vali\\y_vali_sing.npy", y_vali_sing)
-    jnp.save(base_path + "\\vali\\x_vali_orig.npy", x_vali_orig)
-    jnp.save(base_path + "\\vali\\y_vali_orig.npy", y_vali_orig)
-    jnp.save(base_path + "\\vali\\x_vali_aug.npy", x_vali_aug)
+    jnp.save(base_path + "\\vali\\x_vali.npy", x_vali)
+    jnp.save(base_path + "\\vali\\y_vali.npy", y_vali)
 
     jnp.save(base_path + "\\test\\x_test1.npy", x_test1)
     jnp.save(base_path + "\\test\\x_test2.npy", x_test2)
     jnp.save(base_path + "\\test\\y_test.npy", y_test)
     
-    return None
+    train_data = {"sing_features": x_train_sing, "sing_labels": y_train_sing, "dub_orig_features": x_train_orig, 
+                  "dub_labels": y_train_orig, "dub_aug_features": x_train_aug}
+    
+    vali_data = {"features": x_vali, "labels": y_vali}
+
+    test1_data = {"features": x_test1, "labels": y_test}
+    test2_data = {"features": x_test2, "labels": y_test}
+
+    return train_data, vali_data, test1_data, test2_data
+
+
+def load_aug_mnist(c, seed):
+    """
+    TODO: write docstring
+    """
+
+    base_path = f".\\augmented_mnist\\seed{seed}_c{c}"
+
+    if not os.path.exists(base_path):
+        return create_aug_mnist(c, seed)
+    
+    else:
+        print("\n #################### LOADING MNIST DATA #################### \n")
+        x_train_sing = jnp.load(base_path + "\\train\\x_train_sing.npy")
+        y_train_sing = jnp.load(base_path + "\\train\\y_train_sing.npy")
+        x_train_orig = jnp.load(base_path + "\\train\\x_train_orig.npy")
+        y_train_orig= jnp.load(base_path + "\\train\\y_train_orig.npy")
+        x_train_aug = jnp.load(base_path + "\\train\\x_train_aug.npy")
+
+        x_vali = jnp.load(base_path + "\\vali\\x_vali.npy")
+        y_vali = jnp.load(base_path + "\\vali\\y_vali.npy")
+        
+        x_test1 = jnp.load(base_path + "\\test\\x_test1.npy")
+        x_test2 = jnp.load(base_path + "\\test\\x_test2.npy")
+        y_test = jnp.load(base_path + "\\test\\y_test.npy")
+        
+
+        train_data = {"sing_features": x_train_sing, "sing_labels": y_train_sing, "dub_orig_features": x_train_orig, 
+                  "dub_labels": y_train_orig, "dub_aug_features": x_train_aug}
+        
+        vali_data = {"features": x_vali, "labels": y_vali}
+
+        test1_data = {"features": x_test1, "labels": y_test}
+        test2_data = {"features": x_test2, "labels": y_test}
+
+    return train_data, vali_data, test1_data, test2_data
 
 
 if __name__ == "__main__":
 
-    train_data, vali_data, test1_data, test2_data = create_aug_mnist(200, 234)
-    
     ################## DEFINE FREE PARAMETES  ##################
     num_epochs = 18
     batch_size = 102
@@ -377,58 +438,14 @@ if __name__ == "__main__":
     num_batches = int(np.floor(c/d))
     learning_rate = 0.005
     # regularization parameter
-    l = 5
+    l = 0
     seed = 234
     
-    ################## MNIST DATA AUGMENTATION ##################
-    print("\n #################### AUGMENTING MNIST DATA #################### \n")
-
-    (x_train, y_train), (x_test1, y_test) = keras.datasets.mnist.load_data()
-
-    x_train = jnp.array(x_train) / 255
-    x_test1 = jnp.array(x_test1) / 255
-    x_train = jnp.reshape(x_train, (60000, 28, 28, 1))
-    x_test1 = jnp.reshape(x_test1, (10000, 28, 28, 1))
-
-    y_train = jnp.array(y_train).astype(jnp.int32)
-    y_test = jnp.array(y_test).astype(jnp.int32)
-
     key = jax.random.key(seed)
     key, subkey = jax.random.split(key)
-    indices = jax.random.choice(subkey, jnp.arange(60000), shape=(n,), replace=False)
 
-    x_train = x_train[indices, :, :, :]
-    y_train = y_train[indices]
-
-    key, subkey = jax.random.split(key)
-    aug_indices = jax.random.choice(subkey, jnp.arange(10000), shape=(c,), replace=False)
-
-    x_orig = x_train[aug_indices, :, :, :]
-    y_orig = y_train[aug_indices]
-
-    x = jnp.delete(x_train, aug_indices, axis=0)
-    y = jnp.delete(y_train, aug_indices, axis=0)
-
-    key, subkey = jax.random.split(key)
-    rot_samples = jax.random.uniform(subkey, shape=(c,), minval=35., maxval=70.)
-
-    x_aug = jnp.zeros(jnp.shape(x_orig))
-
-    for i in range(c):
-        new_img = ndimage.rotate(
-            x_orig[i, :, :, :], rot_samples[i], reshape=False)
-        x_aug = x_aug.at[i, :, :, :].set(new_img)
-
-    # two test sets will be used to evaluate domain shift invariance: test set 1 is the original MNIST,
-    # test set 2 contains the same images but rotated by 35 or 70 degrees with uniform probability
-    key, subkey = jax.random.split(key)
-    rot_samples = jax.random.uniform(subkey, shape=(10000,), minval=35., maxval=70.)
-
-    x_test2 = x_test1
-
-    for i in range(10000):
-        new_img = ndimage.rotate(x_test1[i, :, :, :], rot_samples[i], reshape=False)
-        x_test2 = x_test2.at[i, :, :, :].set(new_img)
+    ################## LOAD/CREATE DATA ##################
+    train_data, vali_data, test1_data, test2_data = load_aug_mnist(c, 234)
 
     ################## TRAINING ##################
     print("\n #################### START TRAINING #################### \n")
@@ -438,13 +455,15 @@ if __name__ == "__main__":
     key, subkey = jax.random.split(key)
     state = create_train_state(cnn, subkey, learning_rate)
 
-    metrics_history = {'train_loss': [], 'train_accuracy': [], 'test1_loss': [],
-                       'test1_accuracy': [], 'test2_loss': [], 'test2_accuracy': []}
+    metrics_history = {'train_loss': [], 'train_accuracy': [], 'vali_loss': [],
+                       'vali_accuracy': [], 'test2_loss': [], 'test2_accuracy': []}
 
     for i in range(num_epochs):
 
         key, subkey = jax.random.split(key)
-        x_batches, y_batches = get_grouped_batches(x, y, x_orig, y_orig, x_aug, key, batch_size, num_batches, d)
+        x_batches, y_batches = get_grouped_batches(train_data["sing_features"], train_data["sing_labels"], 
+                                                   train_data["dub_orig_features"], train_data["dub_labels"], 
+                                                   train_data["dub_aug_features"], subkey, batch_size, num_batches, d)
 
         for j in range(num_batches):
             train_images = x_batches[j]
@@ -460,23 +479,26 @@ if __name__ == "__main__":
             # reset train_metrics for next training epoch
             state = state.replace(metrics=state.metrics.empty())
 
-        # Compute metrics on the test sets after each training epoch
+        # Compute metrics on the vali set after each training epoch
         # make copy of  current training state because  saved metrics will be overwritten
-        test1_state = state
-        test1_state = compute_metrics(test1_state, x_test1, y_test, d=0, l=l)
+            
+
+        vali_state = state
+        vali_state = compute_metrics(vali_state, vali_data["features"], vali_data["labels"], d=c, l=l)
+
+        for metric, value in vali_state.metrics.compute().items():
+            metrics_history[f'vali_{metric}'].append(value)
 
         test2_state = state
-        test2_state = compute_metrics(test2_state, x_test2, y_test, d=0, l=l)
-
-        for metric, value in test1_state.metrics.compute().items():
-            metrics_history[f'test1_{metric}'].append(value)
+        test2_state = compute_metrics(test2_state, test2_data["features"], test2_data["labels"], d=0, l=l)
 
         for metric, value in test2_state.metrics.compute().items():
             metrics_history[f'test2_{metric}'].append(value)
 
         print(f"train epoch: {i+1}, "f"loss: {metrics_history['train_loss'][-1]}, "f"accuracy: {metrics_history['train_accuracy'][-1] * 100}")
-        print(f"test1 epoch: {i+1}, "f"loss: {metrics_history['test1_loss'][-1]}, "f"accuracy: {metrics_history['test1_accuracy'][-1] * 100}")
+        print(f"vali epoch: {i+1}, "f"loss: {metrics_history['vali_loss'][-1]}, "f"accuracy: {metrics_history['vali_accuracy'][-1] * 100}")
         print(f"test2 epoch: {i+1}, "f"loss: {metrics_history['test2_loss'][-1]}, "f"accuracy: {metrics_history['test2_accuracy'][-1] * 100}")
+        
         print("\n############################################################# \n")
 
     ################## PLOT LEARNING CURVE ##################
@@ -485,8 +507,8 @@ if __name__ == "__main__":
     ax1.set_title('CE Loss')
     ax2.set_title('Accuracy')
 
-    dic = {'train': 'train', 'test1': 'orignal MNIST test','test2': 'rotated MNIST test'}
-    for dataset in ('train', 'test1', 'test2'):
+    dic = {'train': 'train', 'vali': 'validation', 'test2': 'rotated test'}
+    for dataset in ('train', 'vali', 'test2'):
         ax1.plot(metrics_history[f'{dataset}_loss'], label=f'{dic[dataset]}')
         ax2.plot(metrics_history[f'{dataset}_accuracy'], label=f'{dic[dataset]}')
 
@@ -506,7 +528,7 @@ if __name__ == "__main__":
     l_str = str(l).replace(".", ",")
     plt.savefig(f".\learning_curves\learning_curve_lr{lr_str}_l{l_str}_e{num_epochs}_bs{batch_size}.png")
 
-    plt.show()
+    #plt.show()
     plt.clf()
 
-    pred = pred_step(state, x_test2)
+    #pred = pred_step(state, x_test2)
