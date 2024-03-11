@@ -30,6 +30,10 @@ from scipy import ndimage
 import numpy as np
 from functools import partial
 import os
+import logging
+
+logging.basicConfig(level=logging.INFO, filename=".\logfile.txt", filemode="w+",
+                    format="%(asctime)-15s %(levelname)-8s %(message)s")
 
 
 
@@ -270,7 +274,7 @@ def create_aug_mnist(c, seed):
     TODO: write docstring
     """
 
-    print("\n #################### AUGMENTING MNIST DATA #################### \n")
+    logging.info("\n #################### AUGMENTING MNIST DATA #################### \n")
 
     n = 10000
 
@@ -398,6 +402,7 @@ def load_aug_mnist(c, seed):
         return create_aug_mnist(c, seed)
     
     else:
+        logging.info("\n #################### LOADING MNIST DATA #################### \n")
         print("\n #################### LOADING MNIST DATA #################### \n")
         x_train_sing = jnp.load(base_path + "\\train\\x_train_sing.npy")
         y_train_sing = jnp.load(base_path + "\\train\\y_train_sing.npy")
@@ -424,8 +429,12 @@ def load_aug_mnist(c, seed):
     return train_data, vali_data, test1_data, test2_data
 
 
-def train_cnn(train_data, vali_data, test1_data, test2_data, num_epochs, learning_rate, batch_size, 
-              num_batches, c, n, d, l, key, tf_seed=0):
+def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_batches, c, d, l, key, tf_seed=0):
+    """
+    TODO: write docstring
+    """
+
+    logging.info(f"\n #################### START TRAINING l = {l} ####################\n")
     print(f"\n #################### START TRAINING l = {l} ####################\n")
     tf.random.set_seed(tf_seed)
     cnn = CNN()
@@ -438,6 +447,7 @@ def train_cnn(train_data, vali_data, test1_data, test2_data, num_epochs, learnin
 
     states = []
     for i in range(num_epochs):
+        print(f"CURRENT EPOCH = {i}")
 
         key, subkey = jax.random.split(key)
         x_batches, y_batches = get_grouped_batches(train_data["sing_features"], train_data["sing_labels"], 
@@ -468,24 +478,11 @@ def train_cnn(train_data, vali_data, test1_data, test2_data, num_epochs, learnin
             metrics_history[f'vali_{metric}'].append(value)
         
         ############################################################################
-        test1_state = state
-        test1_state = compute_metrics(test1_state, test1_data["features"], test1_data["labels"], d=0, l=l)
 
-        for metric, value in test1_state.metrics.compute().items():
-            metrics_history[f'test1_{metric}'].append(value)
 
-        test2_state = state
-        test2_state = compute_metrics(test2_state, test2_data["features"], test2_data["labels"], d=0, l=l)
-
-        for metric, value in test2_state.metrics.compute().items():
-            metrics_history[f'test2_{metric}'].append(value)
-
-        print(f"train epoch: {i}, "f"loss: {metrics_history['train_loss'][-1]}, "f"accuracy: {metrics_history['train_accuracy'][-1] * 100}")
-        print(f"vali epoch: {i}, "f"loss: {metrics_history['vali_loss'][-1]}, "f"accuracy: {metrics_history['vali_accuracy'][-1] * 100}")
-        print(f"test1 epoch: {i}, "f"loss: {metrics_history['test1_loss'][-1]}, "f"accuracy: {metrics_history['test1_accuracy'][-1] * 100}")
-        print(f"test2 epoch: {i}, "f"loss: {metrics_history['test2_loss'][-1]}, "f"accuracy: {metrics_history['test2_accuracy'][-1] * 100}")
-   
-        print("\n############################################################# \n")
+        logging.info(f"train epoch: {i}, "f"loss: {metrics_history['train_loss'][-1]}, "f"accuracy: {metrics_history['train_accuracy'][-1] * 100}")
+        logging.info(f"vali epoch: {i}, "f"loss: {metrics_history['vali_loss'][-1]}, "f"accuracy: {metrics_history['vali_accuracy'][-1] * 100}")
+        logging.info("\n############################################################# \n")
 
     ################## PLOT LEARNING CURVE ##################
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
@@ -493,8 +490,8 @@ def train_cnn(train_data, vali_data, test1_data, test2_data, num_epochs, learnin
     ax1.set_title('CE Loss')
     ax2.set_title('Accuracy')
 
-    dic = {'train': 'train', 'vali': 'validation', "test1": "test non-rot", "test2": "test rot"}
-    for dataset in ('train', 'vali', 'test1', 'test2'):
+    dic = {'train': 'train', 'vali': 'validation'}
+    for dataset in ('train', 'vali'):
         ax1.plot(metrics_history[f'{dataset}_loss'], label=f'{dic[dataset]}')
         ax2.plot(metrics_history[f'{dataset}_accuracy'], label=f'{dic[dataset]}')
 
@@ -503,10 +500,8 @@ def train_cnn(train_data, vali_data, test1_data, test2_data, num_epochs, learnin
 
     ax1.set_xticks(np.arange(num_epochs, step=2))
     ax2.set_xticks(np.arange(num_epochs, step=2))
-
     ax1.legend()
     ax2.legend()
-
     ax1.grid(True)
     ax2.grid(True)
 
@@ -518,8 +513,8 @@ def train_cnn(train_data, vali_data, test1_data, test2_data, num_epochs, learnin
     best_epoch = max(enumerate(metrics_history['vali_accuracy']), key=lambda x: x[1])[0]
     best_accuracy = max(metrics_history['vali_accuracy'])
 
-    print(f"best vali epoch: {best_epoch}")
-    print(f"best vali accuracy: {best_accuracy}")
+    logging.info(f"best vali epoch: {best_epoch}")
+    logging.info(f"best vali accuracy: {best_accuracy}")
 
     return states, best_epoch, best_accuracy
 
@@ -537,7 +532,7 @@ if __name__ == "__main__":
     num_batches = int(np.floor(c/d))
     learning_rate = 0.005
     # regularization parameters
-    ls = [0, 0.01, 0.1, 1, 10, 100, 1000]
+    ls = [0, 0.01, 0.1, 1]
     seed = 2342
     
     key = jax.random.key(seed)
@@ -552,8 +547,8 @@ if __name__ == "__main__":
     
     for l in ls:
         key, subkey = jax.random.split(key)
-        states, epoch, accuracy = train_cnn(train_data, vali_data, test1_data, test2_data, num_epochs, learning_rate, batch_size, 
-                                          num_batches, c, n, d, l, subkey, tf_seed=0)
+        states, epoch, accuracy = train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, 
+                                          num_batches, c, d, l, subkey, tf_seed=0)
         
         if accuracy > best_accuracy:
             best_l = l
@@ -564,8 +559,8 @@ if __name__ == "__main__":
         dic[str(l)]["accuracy"] = accuracy
     
     best_epoch = dic[str(best_l)]["epoch"]
-    print("\n############################################################# \n")
-    print(f"THE BEST REGULRAIZATION PARAMETER IS {best_l} AT EPOCH {best_epoch} WITH VALI ACCURACY {best_accuracy}")
+    logging.info("\n############################################################# \n")
+    logging.info(f"THE BEST REGULRAIZATION PARAMETER IS {best_l} AT EPOCH {best_epoch} WITH VALI ACCURACY {best_accuracy}")
     
     state = dic[str(best_l)]["states"][best_epoch]
     test1_state = state
@@ -577,7 +572,7 @@ if __name__ == "__main__":
     test1_accuracy = test1_state.metrics.compute()["accuracy"]
     test2_accuracy = test2_state.metrics.compute()["accuracy"]
     
-    print(f"\nACHIEVED NON-ROTATED TEST ACCURACY: {test1_accuracy}")
-    print(f"\nACHIEVED ROTATED TEST ACCURACY: {test2_accuracy}\n")
+    logging.info(f"\nACHIEVED NON-ROTATED TEST ACCURACY: {test1_accuracy}")
+    logging.info(f"\nACHIEVED ROTATED TEST ACCURACY: {test2_accuracy}\n")
 
     
