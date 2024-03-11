@@ -311,10 +311,13 @@ def create_aug_mnist(c, seed):
         seed (int): rng seed to be used
 
     Returns:
-        train_data (dic):
-        vali_data (dic):
-        test1_data (dic):
-        test2_data (dic):
+        train_data (dic): dictionary with keys "sing_features", "sing_labels", "dub_orig_featrues", "dub_aug_features", "dub_labels".
+                          here "sing" and "dub" refers to singlett and dublette groups, where a singlett is defined as a (Y, ID) group only 
+                          containing a single datapoint, and a dublette a group containing exactly two datapoints, namely the original one
+                          and the augmented one. 
+        vali_data (dic): dictionary with keys "featrues" and "labels", values are jax arrays containing the data
+        test1_data (dic): dictionary with keys "featrues" and "labels", values are jax arrays containing the data
+        test2_data (dic): dictionary with keys "featrues" and "labels", values are jax arrays containing the data
         
     '''
 
@@ -436,9 +439,28 @@ def create_aug_mnist(c, seed):
 
 
 def load_aug_mnist(c, seed):
-    """
-    TODO: write docstring
-    """
+    '''
+    Given the number of data points to be augmented (c) and an RNG seed loads the augmented MNIST data. 
+    If the data has not yet been created, calls "create_aug_mnist". 
+    The data is augmentedby randomly selecting <c> data points and rotation them by an angle uniformly distributed 
+    in [35, 70] degrees. Both training and validation data contain c augmented data points.
+    The test1 data consists of the standard domain, where NO image is rotated
+    The test2 data consists of the rotated domain, where ALL images are rotated.
+
+    Parameters:
+        c (int): number of datapoints to be augmenteed by rotation
+        seed (int): rng seed to be used
+
+    Returns:
+        train_data (dic): dictionary with keys "sing_features", "sing_labels", "dub_orig_featrues", "dub_aug_features", "dub_labels".
+                          here "sing" and "dub" refers to singlett and dublette groups, where a singlett is defined as a (Y, ID) group only 
+                          containing a single datapoint, and a dublette a group containing exactly two datapoints, namely the original one
+                          and the augmented one. 
+        vali_data (dic): dictionary with keys "featrues" and "labels", values are jax arrays containing the data
+        test1_data (dic): dictionary with keys "featrues" and "labels", values are jax arrays containing the data
+        test2_data (dic): dictionary with keys "featrues" and "labels", values are jax arrays containing the data
+        
+    '''
 
     base_path = f".\\augmented_mnist\\seed{seed}_c{c}"
 
@@ -474,12 +496,35 @@ def load_aug_mnist(c, seed):
 
 
 def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_batches, c, d, l, key, method="CVP", tf_seed=0):
-    """
-    TODO: write docstring
-    """
+    '''
+    Given data, all relevant learning parameters, and a regularization method, returns a list containing the training state of 
+    each epoch and the epoch that achieved the best validation score.
+
+    Parameters:
+        train_data (dic): dictionary with keys "sing_features", "sing_labels", "dub_orig_featrues", "dub_aug_features", "dub_labels".
+                          here "sing" and "dub" refers to singlett and dublette groups, where a singlett is defined as a (Y, ID) group only 
+                          containing a single datapoint, and a dublette a group containing exactly two datapoints, namely the original one
+                          and the augmented one. 
+        vali_data (dic): dictionary with keys "featrues" and "labels", values are jax arrays containing the data
+        num_epochs (int): number of training epochs
+        learning_rate (float): learning rate
+        batch_size (int): batch size
+        num_batches (int): number of batches
+        c (int): number of augmented mnist data points
+        d (int): number of dublettes to be contained in each training batch
+        l (float): regularization parameter
+        key (jax.RNG): jax RNG key
+        method (string): regularization method, either "CVP" or "CVR" for conditional variance of prediction and representation respectively
+        tf_seed (int): tensorflow rng seed
+
+    Returns:
+        states (list of TrainStates): list containing the training states after each epoch
+        best_epoch (int): epoch with the lowest validation loss
+        best_accuracy (float): accuracy of the epoch with the lowest validation loss
+    '''
 
     if method not in ["CVP", "CVR"]:
-        raise ValueError("Provided method nor regognized. Method should be either CVP or CVR")
+        raise ValueError("Provided method nor recognized. Method should be either CVP or CVR")
 
     logging.info(f"\n#################### START TRAINING {method} l = {l} ####################\n")
     print(f"\n#################### START TRAINING {method} l = {l} ####################\n")
@@ -568,12 +613,35 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
 
 def model_selection(train_data, vali_data, num_epochs, learning_rate, batch_size, num_batches, 
                     c, d, ls, key, method="CVP", tf_seed=0):
-    """
-    TODO: write docstring
-    """
+    '''
+    Given data, all relevant learning parameters, a regularization method and a list of regularization parameters to be validated
+    returns the final training state of the model that achieves the best validation score.
+
+    Parameters:
+        train_data (dic): dictionary with keys "sing_features", "sing_labels", "dub_orig_featrues", "dub_aug_features", "dub_labels".
+                          here "sing" and "dub" refers to singlett and dublette groups, where a singlett is defined as a (Y, ID) group only 
+                          containing a single datapoint, and a dublette a group containing exactly two datapoints, namely the original one
+                          and the augmented one. 
+        vali_data (dic): dictionary with keys "featrues" and "labels", values are jax arrays containing the data
+        num_epochs (int): number of training epochs
+        learning_rate (float): learning rate
+        batch_size (int): batch size
+        num_batches (int): number of batches
+        c (int): number of augmented mnist data points
+        d (int): number of dublettes to be contained in each training batch
+        ls (list): list of regularization parameters to be validated and selected
+        key (jax.RNG): jax RNG key
+        method (string): regularization method, either "CVP" or "CVR" for conditional variance of prediction and representation respectively
+        tf_seed (int): tensorflow rng seed
+
+    Returns:
+        state (TrainState): state of the selected model
+        test1_accuracy (float): accuracy on test set 1 of the best model. Test set 1 contains non-rotated images only
+        test2_accuracy (float:) accuracy on test set 2 of the best model. Test set 2 contains rotated images only
+    '''
 
     if method not in ["CVP", "CVR"]:
-        raise ValueError("Provided method nor regognized. Method should be either CVP or CVR")
+        raise ValueError("Provided method nor recognized. Method should be either CVP or CVR")
 
     logging.info(f"#################### PERFORMING MODEL SELECTION FOR L = {ls} ####################")
     print(f"#################### PERFORMING MODEL SELECTION FOR L = {ls} ####################")
@@ -596,7 +664,7 @@ def model_selection(train_data, vali_data, num_epochs, learning_rate, batch_size
         dic[str(l)]["accuracy"] = accuracy
     
     best_epoch = dic[str(best_l)]["epoch"]
-    logging.info("\n############################################################# \n")
+    logging.info("\n#############################################################\n")
     logging.info(f"THE BEST REGULRAIZATION PARAMETER IS {best_l} AT EPOCH {best_epoch} WITH VALI ACCURACY {best_accuracy}")
     
     state = dic[str(best_l)]["states"][best_epoch]
@@ -626,6 +694,7 @@ if __name__ == "__main__":
     c = 200
     # number of original data points in training set
     n = 10000
+
     # number of dublett groups per batch: f:=floor( (n + c)/batch_size ) is the number of full batches allowed by the data set
     # ceil ( c / f) is the number of dublette groups per full batch
     d = np.ceil(c /np.floor((n + c) / batch_size))
