@@ -9,9 +9,8 @@ See README for details.
 
 TODO:
 - assert correct combinations of batch_size num_batches and d. Provide guidelines
-- write readme
-- write requirements.txt
-- save utils in different python files
+[- save utils in different python files (after entire code including celeb is finished)]
+[- write readme (after entire code including celeb is finished)]
 """
 
 import tensorflow as tf
@@ -48,9 +47,11 @@ class CNN(nn.Module):
         x = nn.relu(x)
         x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
         x = x.reshape((x.shape[0], -1))
+        # extract the learned representation and return it separately. This is needed for CVR regularization
         r = x
         x = nn.Dense(features=10)(x)
         return x, r
+
 
 @struct.dataclass
 class Metrics(metrics.Collection):
@@ -67,11 +68,11 @@ class TrainState(train_state.TrainState):
 def create_train_state(module, rng, learning_rate):
     """Creates an initial `TrainState`."""
     # mnist is 28x28
-    _params = module.init(rng, jnp.ones([1, 28, 28, 1]))['params']
+    params = module.init(rng, jnp.ones([1, 28, 28, 1]))['params']
 
     tx = optax.adam(learning_rate)
 
-    return TrainState.create(apply_fn=module.apply, params=_params, tx=tx, metrics=Metrics.empty())
+    return TrainState.create(apply_fn=module.apply, params=params, tx=tx, metrics=Metrics.empty())
 
 
 @partial(jax.jit, static_argnums=(3, 4, 5))
@@ -94,8 +95,7 @@ def train_step(state, images, labels, d, l, method="CVP"):
     '''
 
     if method not in ["CVP", "CVR"]:
-        raise ValueError(
-            "Provided method nor regognized. Method should be either CVP or CVR")
+        raise ValueError("Provided method nor regognized. Method should be either CVP or CVR")
 
     # m is the number of unique (ID, Y) groups in the batch, meaning both singletts (group of cardinality 1)
     # and dublettes (group of cardinality 2). d is the number of unique dublettes in the batch. The number of singletts is hence
@@ -131,8 +131,7 @@ def train_step(state, images, labels, d, l, method="CVP"):
         # average over all (ID, Y) groups
         C = C/m
 
-        loss = optax.softmax_cross_entropy_with_integer_labels(
-            logits=logits, labels=labels).mean() + l * C
+        loss = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=labels).mean() + l * C
 
         return loss
 
@@ -163,11 +162,9 @@ def compute_metrics(state, images, labels, d, l, method="CVP"):
         state (TrainState): new updated training state which contains the calculated metrics in its Metrics attribute
     '''
 
-
     if method not in ["CVP", "CVR"]:
-        raise ValueError(
-            "Provided method nor recognized. Method should be either CVP or CVR")
-    
+        raise ValueError("Provided method nor recognized. Method should be either CVP or CVR")
+
     # m is the number of unique (ID, Y) groups in the batch, meaning both singletts (group of cardinality 1)
     # and dublettes (group of cardinality 2). d is the number of unique dublettes in the batch. The number of singletts is hence
     # batch_size - 2*d
@@ -199,8 +196,7 @@ def compute_metrics(state, images, labels, d, l, method="CVP"):
     # average over all (ID, Y) groups
     C = C/m
 
-    loss = optax.softmax_cross_entropy_with_integer_labels(
-        logits=logits, labels=labels).mean() + l*C
+    loss = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=labels).mean() + l*C
 
     # can't find any documentation on what "single_from_model_output" does except for literal source code
     metric_updates = state.metrics.single_from_model_output(logits=logits, labels=labels, loss=loss)
@@ -271,12 +267,12 @@ def get_grouped_batches(x, y, x_orig, y_orig, x_aug, key, batch_size, num_batche
 
         for j in range(d):
             # first add the original data point
-            x_batches = x_batches.at[i, n_t + 2*j, :, :, :].set(x_orig_perm[d*i + j, :, :, :])
+            x_batches = x_batches.at[i, n_t + 2*j, :,:, :].set(x_orig_perm[d*i + j, :, :, :])
             # then add the augmented data point directly afterward
-            x_batches = x_batches.at[i, n_t + (2*j)+1, :, :, :].set(x_aug_perm[d*i + j, :, :, :])
+            x_batches = x_batches.at[i, n_t +(2*j)+1, :, :, :].set(x_aug_perm[d*i + j, :, :, :])
 
             y_batches = y_batches.at[i, n_t + 2*j].set(y_orig_perm[d*i + j])
-            y_batches = y_batches.at[i, n_t + (2*j)+1].set(y_orig_perm[d*i + j])
+            y_batches = y_batches.at[i, n_t +(2*j)+1].set(y_orig_perm[d*i + j])
 
     return x_batches, y_batches.astype(jnp.int32)
 
@@ -289,11 +285,11 @@ def pred_step(state, images):
     Parameters:
         state (TrainState): the current training state consisting of parameters, a forward pass function, an optimizer and metrics
         images (jnp.Array): MNIST images of shape (<n>, 28, 28, 1). The last 2*d samples MUST be from dublettes
-        
+
     Returns:
         state (jnp.Array): array of shape (<n>) with the digit predictions
     '''
-    
+
     logits, repr = state.apply_fn({'params': state.params}, images)
     return logits.argmax(axis=1)
 
@@ -318,10 +314,11 @@ def create_aug_mnist(c, seed):
         vali_data (dic): dictionary with keys "featrues" and "labels", values are jax arrays containing the data
         test1_data (dic): dictionary with keys "featrues" and "labels", values are jax arrays containing the data
         test2_data (dic): dictionary with keys "featrues" and "labels", values are jax arrays containing the data
-        
+
     '''
 
-    logging.info("\n#################### AUGMENTING MNIST DATA #################### \n")
+    logging.info(
+        "\n#################### AUGMENTING MNIST DATA #################### \n")
 
     n = 10000
 
@@ -413,7 +410,7 @@ def create_aug_mnist(c, seed):
         os.makedirs(f"{base_path}\\train")
         os.makedirs(f"{base_path}\\vali")
         os.makedirs(f"{base_path}\\test")
-        
+
     jnp.save(base_path + "\\train\\x_train_sing.npy", x_train_sing)
     jnp.save(base_path + "\\train\\y_train_sing.npy", y_train_sing)
     jnp.save(base_path + "\\train\\x_train_orig.npy", x_train_orig)
@@ -426,10 +423,10 @@ def create_aug_mnist(c, seed):
     jnp.save(base_path + "\\test\\x_test1.npy", x_test1)
     jnp.save(base_path + "\\test\\x_test2.npy", x_test2)
     jnp.save(base_path + "\\test\\y_test.npy", y_test)
-    
-    train_data = {"sing_features": x_train_sing, "sing_labels": y_train_sing, "dub_orig_features": x_train_orig, 
+
+    train_data = {"sing_features": x_train_sing, "sing_labels": y_train_sing, "dub_orig_features": x_train_orig,
                   "dub_labels": y_train_orig, "dub_aug_features": x_train_aug}
-    
+
     vali_data = {"features": x_vali, "labels": y_vali}
 
     test1_data = {"features": x_test1, "labels": y_test}
@@ -459,34 +456,34 @@ def load_aug_mnist(c, seed):
         vali_data (dic): dictionary with keys "featrues" and "labels", values are jax arrays containing the data
         test1_data (dic): dictionary with keys "featrues" and "labels", values are jax arrays containing the data
         test2_data (dic): dictionary with keys "featrues" and "labels", values are jax arrays containing the data
-        
+
     '''
 
     base_path = f".\\augmented_mnist\\seed{seed}_c{c}"
 
     if not os.path.exists(base_path):
         return create_aug_mnist(c, seed)
-    
+
     else:
-        logging.info("\n#################### LOADING MNIST DATA #################### \n")
+        logging.info(
+            "\n#################### LOADING MNIST DATA #################### \n")
         print("\n#################### LOADING MNIST DATA #################### \n")
         x_train_sing = jnp.load(base_path + "\\train\\x_train_sing.npy")
         y_train_sing = jnp.load(base_path + "\\train\\y_train_sing.npy")
         x_train_orig = jnp.load(base_path + "\\train\\x_train_orig.npy")
-        y_train_orig= jnp.load(base_path + "\\train\\y_train_orig.npy")
+        y_train_orig = jnp.load(base_path + "\\train\\y_train_orig.npy")
         x_train_aug = jnp.load(base_path + "\\train\\x_train_aug.npy")
 
         x_vali = jnp.load(base_path + "\\vali\\x_vali.npy")
         y_vali = jnp.load(base_path + "\\vali\\y_vali.npy")
-        
+
         x_test1 = jnp.load(base_path + "\\test\\x_test1.npy")
         x_test2 = jnp.load(base_path + "\\test\\x_test2.npy")
         y_test = jnp.load(base_path + "\\test\\y_test.npy")
-        
 
-        train_data = {"sing_features": x_train_sing, "sing_labels": y_train_sing, "dub_orig_features": x_train_orig, 
-                  "dub_labels": y_train_orig, "dub_aug_features": x_train_aug}
-        
+        train_data = {"sing_features": x_train_sing, "sing_labels": y_train_sing, "dub_orig_features": x_train_orig,
+                      "dub_labels": y_train_orig, "dub_aug_features": x_train_aug}
+
         vali_data = {"features": x_vali, "labels": y_vali}
 
         test1_data = {"features": x_test1, "labels": y_test}
@@ -526,8 +523,10 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
     if method not in ["CVP", "CVR"]:
         raise ValueError("Provided method nor recognized. Method should be either CVP or CVR")
 
-    logging.info(f"\n#################### START TRAINING {method} l = {l} ####################\n")
-    print(f"\n#################### START TRAINING {method} l = {l} ####################\n")
+    logging.info(
+        f"\n#################### START TRAINING {method} l = {l} ####################\n")
+    print(
+        f"\n#################### START TRAINING {method} l = {l} ####################\n")
 
     tf.random.set_seed(tf_seed)
     cnn = CNN()
@@ -543,8 +542,8 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
         print(f"CURRENT EPOCH = {i}")
 
         key, subkey = jax.random.split(key)
-        x_batches, y_batches = get_grouped_batches(train_data["sing_features"], train_data["sing_labels"], 
-                                                   train_data["dub_orig_features"], train_data["dub_labels"], 
+        x_batches, y_batches = get_grouped_batches(train_data["sing_features"], train_data["sing_labels"],
+                                                   train_data["dub_orig_features"], train_data["dub_labels"],
                                                    train_data["dub_aug_features"], subkey, batch_size, num_batches, d)
 
         for j in range(num_batches):
@@ -552,7 +551,8 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
             train_labels = y_batches[j]
 
             state = train_step(state, train_images, train_labels, d, l, method)
-            state = compute_metrics(state, train_images, train_labels, d, l, method)
+            state = compute_metrics(
+                state, train_images, train_labels, d, l, method)
 
         #  metrics.compute() performs averaging s.t. it averages over the metrics of all batches in that epoch
         for metric, value in state.metrics.compute().items():
@@ -565,15 +565,17 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
         # Compute metrics on the vali set after each training epoch
         # make copy of  current training state because  saved metrics will be overwritten
         vali_state = state
-        vali_state = compute_metrics(vali_state, vali_data["features"], vali_data["labels"], d=c, l=l)
+        vali_state = compute_metrics(
+            vali_state, vali_data["features"], vali_data["labels"], d=c, l=l)
 
         for metric, value in vali_state.metrics.compute().items():
             metrics_history[f'vali_{metric}'].append(value)
-        
-        ############################################################################
 
-        logging.info(f"train epoch: {i}, "f"loss: {metrics_history['train_loss'][-1]}, "f"accuracy: {metrics_history['train_accuracy'][-1] * 100}")
-        logging.info(f"vali epoch: {i}, "f"loss: {metrics_history['vali_loss'][-1]}, "f"accuracy: {metrics_history['vali_accuracy'][-1] * 100}")
+
+        logging.info(f"train epoch: {i}, "f"loss: {metrics_history['train_loss'][-1]}, 
+                     "f"accuracy: {metrics_history['train_accuracy'][-1] * 100}")
+        logging.info(f"vali epoch: {i}, "f"loss: {metrics_history['vali_loss'][-1]},
+                      "f"accuracy: {metrics_history['vali_accuracy'][-1] * 100}")
         logging.info("\n############################################################# \n")
 
     ################## PLOT AND SAVE LEARNING CURVE ##################
@@ -611,7 +613,7 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
     return states, best_epoch, best_accuracy
 
 
-def model_selection(train_data, vali_data, num_epochs, learning_rate, batch_size, num_batches, 
+def model_selection(train_data, vali_data, num_epochs, learning_rate, batch_size, num_batches,
                     c, d, ls, key, method="CVP", tf_seed=0):
     '''
     Given data, all relevant learning parameters, a regularization method and a list of regularization parameters to be validated
@@ -649,24 +651,24 @@ def model_selection(train_data, vali_data, num_epochs, learning_rate, batch_size
     dic = {}
     best_l = None
     best_accuracy = -1000
-    
+
     for l in ls:
         key, subkey = jax.random.split(key)
-        states, epoch, accuracy = train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, 
+        states, epoch, accuracy = train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size,
                                             num_batches, c, d, l, subkey, method, tf_seed)
-        
+
         if accuracy > best_accuracy:
             best_l = l
             best_accuracy = accuracy
-        
+
         dic[str(l)] = {"epoch": None, "accuracy": None, "states": states}
         dic[str(l)]["epoch"] = epoch
         dic[str(l)]["accuracy"] = accuracy
-    
+
     best_epoch = dic[str(best_l)]["epoch"]
     logging.info("\n#############################################################\n")
     logging.info(f"THE BEST REGULRAIZATION PARAMETER IS {best_l} AT EPOCH {best_epoch} WITH VALI ACCURACY {best_accuracy}")
-    
+
     state = dic[str(best_l)]["states"][best_epoch]
     test1_state = state
     test2_state = state
@@ -676,7 +678,7 @@ def model_selection(train_data, vali_data, num_epochs, learning_rate, batch_size
 
     test1_accuracy = test1_state.metrics.compute()["accuracy"]
     test2_accuracy = test2_state.metrics.compute()["accuracy"]
-    
+
     logging.info(f"\nACHIEVED NON-ROTATED {method} TEST ACCURACY: {test1_accuracy}")
     logging.info(f"\nACHIEVED ROTATED {method} TEST ACCURACY: {test2_accuracy}")
 
@@ -697,17 +699,17 @@ if __name__ == "__main__":
 
     # number of dublett groups per batch: f:=floor( (n + c)/batch_size ) is the number of full batches allowed by the data set
     # ceil ( c / f) is the number of dublette groups per full batch
-    d = np.ceil(c /np.floor((n + c) / batch_size))
+    d = np.ceil(c / np.floor((n + c) / batch_size))
     d = int(d)
 
     # number of batches is the number of dublette groups divided by the number of dublettes per batch
     num_batches = int(np.floor(c / d))
-    
+
     # regularization parameters on which to perform model selection
     ls = [0.01, 0.1, 1]
 
-    seed = 2342
-    
+    seed = 4342
+
     ################## LOAD/CREATE DATA ##################
     key = jax.random.key(seed)
     train_data, vali_data, test1_data, test2_data = load_aug_mnist(c, seed)
@@ -715,18 +717,17 @@ if __name__ == "__main__":
     ################## TRAIN MODELS ##################
 
     # run unregularized case as model selection with only l=0 to choose from, method chosen does not matter for l=0
-    state, t1_accuracy, t2_accuracy = model_selection(train_data, vali_data, num_epochs, learning_rate, batch_size, 
+    state, t1_accuracy, t2_accuracy = model_selection(train_data, vali_data, num_epochs, learning_rate, batch_size,
                                                       num_batches, c, d, [0], key, method="CVP", tf_seed=0)
-    
+
     # select regularization parameter for conditional variance of prediction
-    state_cvp, t1_accuracy_cvp, t2_accuracy_cvp = model_selection(train_data, vali_data, num_epochs, learning_rate, 
-                                                                  batch_size, num_batches, c, d, ls, key, method="CVP", 
+    state_cvp, t1_accuracy_cvp, t2_accuracy_cvp = model_selection(train_data, vali_data, num_epochs, learning_rate,
+                                                                  batch_size, num_batches, c, d, ls, key, method="CVP",
                                                                   tf_seed=0)
-    
+
     # select regularization parameter for conditional variance of representation
-    state_cvr, t1_accuracy_cvr, t2_accuracy_cvr = model_selection(train_data, vali_data, num_epochs, learning_rate, batch_size, 
+    state_cvr, t1_accuracy_cvr, t2_accuracy_cvr = model_selection(train_data, vali_data, num_epochs, learning_rate, batch_size,
                                                                   num_batches, c, d, ls, key, method="CVR", tf_seed=0)
-    
 
     logging.info("\n###########################################################################\n")
 
@@ -738,7 +739,12 @@ if __name__ == "__main__":
     logging.info(f"CVP NON-ROTATED TEST ACCURACY = {t2_accuracy_cvp}")
     logging.info(f"CVR ROTATED TEST ACCURACY = {t2_accuracy_cvr}")
 
-    
-    
+    print("\n###########################################################################\n")
 
-    
+    print(f"NON-REGULARIZED NON-ROTATED TEST ACCURACY = {t1_accuracy}")
+    print(f"CVP NON-ROTATED TEST ACCURACY = {t1_accuracy_cvp}")
+    print(f"CVR ROTATED TEST ACCURACY = {t1_accuracy_cvr}")
+
+    print(f"\nNON-REGULARIZED NON-ROTATED TEST ACCURACY = {t2_accuracy}")
+    print(f"CVP NON-ROTATED TEST ACCURACY = {t2_accuracy_cvp}")
+    print(f"CVR ROTATED TEST ACCURACY = {t2_accuracy_cvr}")
