@@ -1,6 +1,6 @@
 """
-The following script implements conditional variance regularization (CVR) for domain shift robustness on the MNIST 
-data set in Jax/Flax. It reproduces the MNIST results of the following original paper introducing CVR: 
+The following script implements conditional variance regularization for domain shift robustness on the MNIST 
+data set in Jax/Flax. It reproduces the MNIST results of the following original paper introducing the method: 
 
 https://arxiv.org/abs/1710.11469.
 
@@ -8,11 +8,9 @@ See README for details.
 ................
 
 TODO:
-- implement trian vali test split for regulaization selection, including a function to be called to train for a specific parameter
 - assert correct combinations of batch_size num_batches and d. Provide guidelines
 - write readme
 - write requirements.txt
-- try cond var of repr
 - save utils in different python files
 """
 
@@ -89,6 +87,7 @@ def train_step(state, images, labels, d, l, method="CVP"):
                             where consecutive samples are from the same dublette. All samples before are singlettes
         d (int): the number of (ID, Y) groups with cardinality bigger 1
         l (float): conditional variance regularization parameter
+        method (string): regularization method to be applied, either "CVP" or "CVR" for conditional variance of prediction or representation
 
     Returns:
         state (TrainState): new updated training state after performing one gradient descent step on the provided batch
@@ -158,6 +157,7 @@ def compute_metrics(state, images, labels, d, l, method="CVP"):
                             where consecutive samples are from the same dublette. All samples before are singlettes
         d (int): the number of (ID, Y) groups with cardinality bigger 1
         l (float): conditional variance regularization parameter
+        method (string): regularization method to be applied, either "CVP" or "CVR" for conditional variance of prediction or representation
 
     Returns:
         state (TrainState): new updated training state which contains the calculated metrics in its Metrics attribute
@@ -283,16 +283,42 @@ def get_grouped_batches(x, y, x_orig, y_orig, x_aug, key, batch_size, num_batche
 
 @jax.jit
 def pred_step(state, images):
+    '''
+    Given a training state and some images, returns the predictions for these images given the state.
+
+    Parameters:
+        state (TrainState): the current training state consisting of parameters, a forward pass function, an optimizer and metrics
+        images (jnp.Array): MNIST images of shape (<n>, 28, 28, 1). The last 2*d samples MUST be from dublettes
+        
+    Returns:
+        state (jnp.Array): array of shape (<n>) with the digit predictions
+    '''
+    
     logits, repr = state.apply_fn({'params': state.params}, images)
     return logits.argmax(axis=1)
 
 
 def create_aug_mnist(c, seed):
-    """
-    TODO: write docstring
-    """
+    '''
+    Given the number of data points to be augmented (c) and an RNG seed returns and saves augmented MNIST data. The data is augmented
+    by randomly selecting <c> data points and rotation them by an angle uniformly distributed in [35, 70] degrees.
+    Both training and validation data contain c augmented data points.
+    The test1 data consists of the standard domain, where NO image is rotated
+    The test2 data consists of the rotated domain, where ALL images are rotated.
 
-    logging.info("\n #################### AUGMENTING MNIST DATA #################### \n")
+    Parameters:
+        c (int): number of datapoints to be augmenteed by rotation
+        seed (int): rng seed to be used
+
+    Returns:
+        train_data (dic):
+        vali_data (dic):
+        test1_data (dic):
+        test2_data (dic):
+        
+    '''
+
+    logging.info("\n#################### AUGMENTING MNIST DATA #################### \n")
 
     n = 10000
 
@@ -420,8 +446,8 @@ def load_aug_mnist(c, seed):
         return create_aug_mnist(c, seed)
     
     else:
-        logging.info("\n #################### LOADING MNIST DATA #################### \n")
-        print("\n #################### LOADING MNIST DATA #################### \n")
+        logging.info("\n#################### LOADING MNIST DATA #################### \n")
+        print("\n#################### LOADING MNIST DATA #################### \n")
         x_train_sing = jnp.load(base_path + "\\train\\x_train_sing.npy")
         y_train_sing = jnp.load(base_path + "\\train\\y_train_sing.npy")
         x_train_orig = jnp.load(base_path + "\\train\\x_train_orig.npy")
@@ -452,8 +478,12 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
     TODO: write docstring
     """
 
-    logging.info(f"\n #################### START TRAINING l = {l} ####################\n")
-    print(f"\n #################### START TRAINING l = {l} ####################\n")
+    if method not in ["CVP", "CVR"]:
+        raise ValueError("Provided method nor regognized. Method should be either CVP or CVR")
+
+    logging.info(f"\n#################### START TRAINING {method} l = {l} ####################\n")
+    print(f"\n#################### START TRAINING {method} l = {l} ####################\n")
+
     tf.random.set_seed(tf_seed)
     cnn = CNN()
     key, subkey = jax.random.split(key)
@@ -497,12 +527,11 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
         
         ############################################################################
 
-
         logging.info(f"train epoch: {i}, "f"loss: {metrics_history['train_loss'][-1]}, "f"accuracy: {metrics_history['train_accuracy'][-1] * 100}")
         logging.info(f"vali epoch: {i}, "f"loss: {metrics_history['vali_loss'][-1]}, "f"accuracy: {metrics_history['vali_accuracy'][-1] * 100}")
         logging.info("\n############################################################# \n")
 
-    ################## PLOT LEARNING CURVE ##################
+    ################## PLOT AND SAVE LEARNING CURVE ##################
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
 
     ax1.set_title('CE Loss')
@@ -536,37 +565,27 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
 
     return states, best_epoch, best_accuracy
 
-if __name__ == "__main__":
 
-    ################## DEFINE FREE PARAMETES  ##################
-    num_epochs = 10
-    batch_size = 102
-    # number of data points to be augmented by rotation
-    c = 200
-    # number of original data points in training set
-    n = 10000
-    # number of dublett groups per batch
-    d = int(np.ceil(c/np.floor((n+c)/batch_size)))
-    num_batches = int(np.floor(c/d))
-    learning_rate = 0.005
-    # regularization parameters
-    ls = [0, 0.01, 0.1, 1]
-    seed = 2342
-    
-    key = jax.random.key(seed)
-    
-    ################## LOAD/CREATE DATA ##################
-    train_data, vali_data, test1_data, test2_data = load_aug_mnist(c, seed)
+def model_selection(train_data, vali_data, num_epochs, learning_rate, batch_size, num_batches, 
+                    c, d, ls, key, method="CVP", tf_seed=0):
+    """
+    TODO: write docstring
+    """
 
-    ################## TRAIN MODEL(S) ##################
+    if method not in ["CVP", "CVR"]:
+        raise ValueError("Provided method nor regognized. Method should be either CVP or CVR")
+
+    logging.info(f"#################### PERFORMING MODEL SELECTION FOR L = {ls} ####################")
+    print(f"#################### PERFORMING MODEL SELECTION FOR L = {ls} ####################")
+
     dic = {}
     best_l = None
-    best_accuracy = -10
+    best_accuracy = -1000
     
     for l in ls:
         key, subkey = jax.random.split(key)
         states, epoch, accuracy = train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, 
-                                          num_batches, c, d, l, subkey, method="CVP", tf_seed=0)
+                                            num_batches, c, d, l, subkey, method, tf_seed)
         
         if accuracy > best_accuracy:
             best_l = l
@@ -590,7 +609,67 @@ if __name__ == "__main__":
     test1_accuracy = test1_state.metrics.compute()["accuracy"]
     test2_accuracy = test2_state.metrics.compute()["accuracy"]
     
-    logging.info(f"\nACHIEVED NON-ROTATED TEST ACCURACY: {test1_accuracy}")
-    logging.info(f"\nACHIEVED ROTATED TEST ACCURACY: {test2_accuracy}\n")
+    logging.info(f"\nACHIEVED NON-ROTATED {method} TEST ACCURACY: {test1_accuracy}")
+    logging.info(f"\nACHIEVED ROTATED {method} TEST ACCURACY: {test2_accuracy}")
+
+    return state, test1_accuracy, test2_accuracy
+
+
+if __name__ == "__main__":
+
+    ################## DEFINE FREE PARAMETES  ##################
+    num_epochs = 30
+    batch_size = 102
+    learning_rate = 0.005
+
+    # number of data points to be augmented by rotation, equal to number of dublette groups in the final data set
+    c = 200
+    # number of original data points in training set
+    n = 10000
+    # number of dublett groups per batch: f:=floor( (n + c)/batch_size ) is the number of full batches allowed by the data set
+    # ceil ( c / f) is the number of dublette groups per full batch
+    d = np.ceil(c /np.floor((n + c) / batch_size))
+    d = int(d)
+
+    # number of batches is the number of dublette groups divided by the number of dublettes per batch
+    num_batches = int(np.floor(c / d))
+    
+    # regularization parameters on which to perform model selection
+    ls = [0.01, 0.1, 1]
+
+    seed = 2342
+    
+    ################## LOAD/CREATE DATA ##################
+    key = jax.random.key(seed)
+    train_data, vali_data, test1_data, test2_data = load_aug_mnist(c, seed)
+
+    ################## TRAIN MODELS ##################
+
+    # run unregularized case as model selection with only l=0 to choose from, method chosen does not matter for l=0
+    state, t1_accuracy, t2_accuracy = model_selection(train_data, vali_data, num_epochs, learning_rate, batch_size, 
+                                                      num_batches, c, d, [0], key, method="CVP", tf_seed=0)
+    
+    # select regularization parameter for conditional variance of prediction
+    state_cvp, t1_accuracy_cvp, t2_accuracy_cvp = model_selection(train_data, vali_data, num_epochs, learning_rate, 
+                                                                  batch_size, num_batches, c, d, ls, key, method="CVP", 
+                                                                  tf_seed=0)
+    
+    # select regularization parameter for conditional variance of representation
+    state_cvr, t1_accuracy_cvr, t2_accuracy_cvr = model_selection(train_data, vali_data, num_epochs, learning_rate, batch_size, 
+                                                                  num_batches, c, d, ls, key, method="CVR", tf_seed=0)
+    
+
+    logging.info("\n###########################################################################\n")
+
+    logging.info(f"NON-REGULARIZED NON-ROTATED TEST ACCURACY = {t1_accuracy}")
+    logging.info(f"CVP NON-ROTATED TEST ACCURACY = {t1_accuracy_cvp}")
+    logging.info(f"CVR ROTATED TEST ACCURACY = {t1_accuracy_cvr}")
+
+    logging.info(f"\nNON-REGULARIZED NON-ROTATED TEST ACCURACY = {t2_accuracy}")
+    logging.info(f"CVP NON-ROTATED TEST ACCURACY = {t2_accuracy_cvp}")
+    logging.info(f"CVR ROTATED TEST ACCURACY = {t2_accuracy_cvr}")
+
+    
+    
 
     
