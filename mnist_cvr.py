@@ -274,23 +274,6 @@ def get_grouped_batches(x, y, x_orig, y_orig, x_aug, key, batch_size, num_batche
     return x_batches, y_batches.astype(jnp.int32)
 
 
-@jax.jit
-def pred_step(state, images):
-    '''
-    Given a training state and some images, returns the predictions for these images given the state.
-
-    Parameters:
-        state (TrainState): the current training state consisting of parameters, a forward pass function, an optimizer and metrics
-        images (jnp.Array): MNIST images of shape (<n>, 28, 28, 1). The last 2*d samples MUST be from dublettes
-
-    Returns:
-        state (jnp.Array): array of shape (<n>) with the digit predictions
-    '''
-
-    logits, repr = state.apply_fn({'params': state.params}, images)
-    return logits.argmax(axis=1)
-
-
 def create_aug_mnist(c, seed, n):
     '''
     Given the number of data points to be augmented (c) and an RNG seed returns and saves augmented MNIST data. The data is augmented
