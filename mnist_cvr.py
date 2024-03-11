@@ -8,7 +8,6 @@ See README for details.
 ................
 
 TODO:
-- assert correct combinations of batch_size num_batches and d. Provide guidelines
 [- save utils in different python files (after entire code including celeb is finished)]
 [- write readme (after entire code including celeb is finished)]
 """
@@ -95,7 +94,7 @@ def train_step(state, images, labels, d, l, method="CVP"):
     '''
 
     if method not in ["CVP", "CVR"]:
-        raise ValueError("Provided method nor regognized. Method should be either CVP or CVR")
+        raise ValueError("Provided method nor recognized. Method should be either CVP or CVR")
 
     # m is the number of unique (ID, Y) groups in the batch, meaning both singletts (group of cardinality 1)
     # and dublettes (group of cardinality 2). d is the number of unique dublettes in the batch. The number of singletts is hence
@@ -162,8 +161,6 @@ def compute_metrics(state, images, labels, d, l, method="CVP"):
         state (TrainState): new updated training state which contains the calculated metrics in its Metrics attribute
     '''
 
-    if method not in ["CVP", "CVR"]:
-        raise ValueError("Provided method nor recognized. Method should be either CVP or CVR")
 
     # m is the number of unique (ID, Y) groups in the batch, meaning both singletts (group of cardinality 1)
     # and dublettes (group of cardinality 2). d is the number of unique dublettes in the batch. The number of singletts is hence
@@ -185,7 +182,7 @@ def compute_metrics(state, images, labels, d, l, method="CVP"):
         # get indices of samples in the same dublette
         idxs = jnp.array([n_t + 2*i, n_t + 2*i + 1])
 
-        # calculate variance of the logits inside the dublette
+        # calculate variance of the logits inside the dublettes
         if method == "CVP":
             vars = jnp.nanvar(jnp.take(logits, idxs, axis=0), axis=0)
         else:
@@ -294,7 +291,7 @@ def pred_step(state, images):
     return logits.argmax(axis=1)
 
 
-def create_aug_mnist(c, seed):
+def create_aug_mnist(c, seed, n):
     '''
     Given the number of data points to be augmented (c) and an RNG seed returns and saves augmented MNIST data. The data is augmented
     by randomly selecting <c> data points and rotation them by an angle uniformly distributed in [35, 70] degrees.
@@ -305,6 +302,8 @@ def create_aug_mnist(c, seed):
     Parameters:
         c (int): number of datapoints to be augmenteed by rotation
         seed (int): rng seed to be used
+        n (int): number of original data points to use in the training and validation set
+
 
     Returns:
         train_data (dic): dictionary with keys "sing_features", "sing_labels", "dub_orig_featrues", "dub_aug_features", "dub_labels".
@@ -319,8 +318,6 @@ def create_aug_mnist(c, seed):
 
     logging.info("\n#################### AUGMENTING MNIST DATA #################### \n")
     print("\n#################### AUGMENTING MNIST DATA #################### \n")
-
-    n = 10000
 
     (x, y), (x_test1, y_test) = keras.datasets.mnist.load_data()
 
@@ -344,7 +341,7 @@ def create_aug_mnist(c, seed):
     y_vali = y[indices[n:]]
 
     key, subkey = jax.random.split(key)
-    aug_indices = jax.random.choice(subkey, jnp.arange(10000), shape=(c,), replace=False)
+    aug_indices = jax.random.choice(subkey, jnp.arange(n), shape=(c,), replace=False)
 
     x_train_orig = x_train[aug_indices, :, :, :]
     y_train_orig = y_train[aug_indices]
@@ -383,7 +380,7 @@ def create_aug_mnist(c, seed):
         new_img = ndimage.rotate(x_test1[i, :, :, :], rot_samples_test[i], reshape=False)
         x_test2 = x_test2.at[i, :, :, :].set(new_img)
 
-    base_path = f".\\augmented_mnist\\seed{seed}_c{c}"
+    base_path = f".\\augmented_mnist\\seed{seed}_c{c}_n{n}"
 
     # prepare vali data s.t. dublette data is at the end with data points in same group consecutive to each other
     n_s = n - c
@@ -435,7 +432,7 @@ def create_aug_mnist(c, seed):
     return train_data, vali_data, test1_data, test2_data
 
 
-def load_aug_mnist(c, seed):
+def load_aug_mnist(c, seed, n):
     '''
     Given the number of data points to be augmented (c) and an RNG seed loads the augmented MNIST data. 
     If the data has not yet been created, calls "create_aug_mnist". 
@@ -447,6 +444,7 @@ def load_aug_mnist(c, seed):
     Parameters:
         c (int): number of datapoints to be augmenteed by rotation
         seed (int): rng seed to be used
+        n (int): number of original data points to use in the training and validation set
 
     Returns:
         train_data (dic): dictionary with keys "sing_features", "sing_labels", "dub_orig_featrues", "dub_aug_features", "dub_labels".
@@ -459,10 +457,10 @@ def load_aug_mnist(c, seed):
 
     '''
 
-    base_path = f".\\augmented_mnist\\seed{seed}_c{c}"
+    base_path = f".\\augmented_mnist\\seed{seed}_c{c}_n{n}"
 
     if not os.path.exists(base_path):
-        return create_aug_mnist(c, seed)
+        return create_aug_mnist(c, seed, n)
 
     else:
         logging.info("\n#################### LOADING MNIST DATA #################### \n")
@@ -547,8 +545,7 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
             train_labels = y_batches[j]
 
             state = train_step(state, train_images, train_labels, d, l, method)
-            state = compute_metrics(
-                state, train_images, train_labels, d, l, method)
+            state = compute_metrics(state, train_images, train_labels, d, l, method)
 
         #  metrics.compute() performs averaging s.t. it averages over the metrics of all batches in that epoch
         for metric, value in state.metrics.compute().items():
@@ -561,8 +558,7 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
         # Compute metrics on the vali set after each training epoch
         # make copy of  current training state because  saved metrics will be overwritten
         vali_state = state
-        vali_state = compute_metrics(
-            vali_state, vali_data["features"], vali_data["labels"], d=c, l=l)
+        vali_state = compute_metrics(vali_state, vali_data["features"], vali_data["labels"], d=c, l=l)
 
         for metric, value in vali_state.metrics.compute().items():
             metrics_history[f'vali_{metric}'].append(value)
@@ -613,7 +609,7 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
     return states, best_epoch, best_accuracy
 
 
-def model_selection(train_data, vali_data, num_epochs, learning_rate, batch_size, num_batches,
+def model_selection(train_data, vali_data, test1_data, test2_data, num_epochs, learning_rate, batch_size, num_batches,
                     c, d, ls, key, method="CVP", tf_seed=0):
     '''
     Given data, all relevant learning parameters, a regularization method and a list of regularization parameters to be validated
@@ -625,6 +621,8 @@ def model_selection(train_data, vali_data, num_epochs, learning_rate, batch_size
                           containing a single datapoint, and a dublette a group containing exactly two datapoints, namely the original one
                           and the augmented one. 
         vali_data (dic): dictionary with keys "featrues" and "labels", values are jax arrays containing the data
+        test1_data (dic): dictionary with keys "featrues" and "labels", containing non-rotated, non-augmented test data
+        test2_data (dic): dictionary with keys "featrues" and "labels", containing rotated, non-augmented test data
         num_epochs (int): number of training epochs
         learning_rate (float): learning rate
         batch_size (int): batch size
@@ -693,45 +691,50 @@ if __name__ == "__main__":
 
     ################## DEFINE FREE PARAMETES  ##################
     num_epochs = 30
-    batch_size = 102
-    learning_rate = 0.005
+    learning_rate = 0.003
 
-    # number of data points to be augmented by rotation, equal to number of dublette groups in the final data set
-    c = 200
-    # number of original data points in training set
+    # n is the number of original data points in training set. Needs to be an integer multiple of 100 
+    # for below parameter choices to be optimal: batches are sorted such that always the last 2*d datapoints
+    # are augmented groups, meaning d consecutive pairs with first the original data point, 
+    # then the augmented/rotated datapoint. The below choice of batch size, d and number of batches ensures that
+    # the final batch is not partially filled
     n = 10000
 
-    # number of dublett groups per batch: f:=floor( (n + c)/batch_size ) is the number of full batches allowed by the data set
-    # ceil ( c / f) is the number of dublette groups per full batch
-    d = np.ceil(c / np.floor((n + c) / batch_size))
-    d = int(d)
+    # fractions of data points to be augmented, should be an integer multiple of 0.01 for below parameter choice to be optimal
+    alpha = 0.02
 
-    # number of batches is the number of dublette groups divided by the number of dublettes per batch
-    num_batches = int(np.floor(c / d))
+    # number of data points to be augmented by rotation, equal to number of dublette groups in the final data set
+    c = int(alpha * n)
+    batch_size = int((1 + alpha) * 100)
+    # d is the number of dublette (Y, ID) groups per batch
+    d = int(alpha * 100)
+    num_batches = int(n / 100)
 
     # regularization parameters on which to perform model selection
-    ls = [0.01, 0.1, 1]
+    ls = [0.01, 0.1, 1, 10]
 
-    seed = 834
+    seed = 2244
 
     ################## LOAD/CREATE DATA ##################
     key = jax.random.key(seed)
-    train_data, vali_data, test1_data, test2_data = load_aug_mnist(c, seed)
+    train_data, vali_data, test1_data, test2_data = load_aug_mnist(c, seed, n)
 
     ################## TRAIN MODELS ##################
 
     # run unregularized case as model selection with only l=0 to choose from, method chosen does not matter for l=0
-    state, t1_accuracy, t2_accuracy = model_selection(train_data, vali_data, num_epochs, learning_rate, batch_size,
-                                                      num_batches, c, d, [0], key, method="CVP", tf_seed=0)
+    state, t1_accuracy, t2_accuracy = model_selection(train_data, vali_data, test1_data, test2_data, num_epochs, 
+                                                      learning_rate, batch_size,num_batches, c, d, [0], key, 
+                                                      method="CVP", tf_seed=0)
 
     # select regularization parameter for conditional variance of prediction
-    state_cvp, t1_accuracy_cvp, t2_accuracy_cvp = model_selection(train_data, vali_data, num_epochs, learning_rate,
-                                                                  batch_size, num_batches, c, d, ls, key, method="CVP",
-                                                                  tf_seed=0)
+    state_cvp, t1_accuracy_cvp, t2_accuracy_cvp = model_selection(train_data, vali_data, test1_data, test2_data, num_epochs, 
+                                                                  learning_rate, batch_size, num_batches, c, d, ls, key, 
+                                                                  method="CVP", tf_seed=0)
 
     # select regularization parameter for conditional variance of representation
-    state_cvr, t1_accuracy_cvr, t2_accuracy_cvr = model_selection(train_data, vali_data, num_epochs, learning_rate, batch_size,
-                                                                  num_batches, c, d, ls, key, method="CVR", tf_seed=0)
+    state_cvr, t1_accuracy_cvr, t2_accuracy_cvr = model_selection(train_data, vali_data, test1_data, test2_data,num_epochs, 
+                                                                  learning_rate, batch_size, num_batches, c, d, ls, key, 
+                                                                  method="CVR", tf_seed=0)
 
     logging.info("\n###########################################################################\n")
 
