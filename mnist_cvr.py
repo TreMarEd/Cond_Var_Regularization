@@ -712,7 +712,7 @@ if __name__ == "__main__":
     # regularization parameters on which to perform model selection
     ls = [0.01, 0.1, 1]
 
-    seed = 8342
+    seed = 834
 
     ################## LOAD/CREATE DATA ##################
     key = jax.random.key(seed)
