@@ -36,20 +36,23 @@ logging.basicConfig(level=logging.INFO, filename=".\logfile.txt", filemode="w+",
                     format="%(asctime)-15s %(levelname)-8s %(message)s")
 
 
-
 class CNN(nn.Module):
     """A simple CNN model."""
     @nn.compact
     def __call__(self, x):
-        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
-        x = nn.relu(x)
         x = nn.Conv(features=32, kernel_size=(5, 5), strides=2)(x)
         x = nn.relu(x)
-        # x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
+        x = nn.Conv(features=32, kernel_size=(4, 4), strides=2)(x)
+        x = nn.relu(x)
+        x = nn.Conv(features=16, kernel_size=(3, 3), strides=2)(x)
+        x = nn.relu(x)
+        x = nn.Conv(features=16, kernel_size=(3, 3), strides=2)(x)
+        x = nn.relu(x)
+        x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
         x = x.reshape((x.shape[0], -1))
+        r = x
         x = nn.Dense(features=10)(x)
-        return x
-
+        return x, r
 
 @struct.dataclass
 class Metrics(metrics.Collection):
@@ -73,8 +76,8 @@ def create_train_state(module, rng, learning_rate):
     return TrainState.create(apply_fn=module.apply, params=_params, tx=tx, metrics=Metrics.empty())
 
 
-@partial(jax.jit, static_argnums=(3, 4))
-def train_step(state, images, labels, d, l):
+@partial(jax.jit, static_argnums=(3, 4, 5))
+def train_step(state, images, labels, d, l, method="CVP"):
     '''
     Maps a training state, training features, training labels to the new training state after a single gradient descent step
 
@@ -91,6 +94,10 @@ def train_step(state, images, labels, d, l):
         state (TrainState): new updated training state after performing one gradient descent step on the provided batch
     '''
 
+    if method not in ["CVP", "CVR"]:
+        raise ValueError(
+            "Provided method nor regognized. Method should be either CVP or CVR")
+
     # m is the number of unique (ID, Y) groups in the batch, meaning both singletts (group of cardinality 1)
     # and dublettes (group of cardinality 2). d is the number of unique dublettes in the batch. The number of singletts is hence
     # batch_size - 2*d
@@ -102,7 +109,7 @@ def train_step(state, images, labels, d, l):
     def loss_fn(params_):
 
         # forward pass
-        logits = state.apply_fn({'params': params_}, images)
+        logits, repr = state.apply_fn({'params': params_}, images)
 
         # initialize regularization term
         C = 0
@@ -115,7 +122,10 @@ def train_step(state, images, labels, d, l):
             idxs = jnp.array([n_t + 2*i, n_t + 2*i + 1])
 
             # calculate variance of the logits inside the dublette
-            vars = jnp.nanvar(jnp.take(logits, idxs, axis=0), axis=0)
+            if method == "CVP":
+                vars = jnp.nanvar(jnp.take(logits, idxs, axis=0), axis=0)
+            else:
+                vars = jnp.nanvar(jnp.take(repr, idxs, axis=0), axis=0)
 
             C = C + jnp.sum(vars)
 
@@ -134,8 +144,8 @@ def train_step(state, images, labels, d, l):
     return state
 
 
-@partial(jax.jit, static_argnums=(3, 4))
-def compute_metrics(state, images, labels, d, l):
+@partial(jax.jit, static_argnums=(3, 4, 5))
+def compute_metrics(state, images, labels, d, l, method="CVP"):
     '''
     Given a training state and some features, labels, returns a new training state whose metrics have been updated according to the
     provided data.
@@ -153,6 +163,11 @@ def compute_metrics(state, images, labels, d, l):
         state (TrainState): new updated training state which contains the calculated metrics in its Metrics attribute
     '''
 
+
+    if method not in ["CVP", "CVR"]:
+        raise ValueError(
+            "Provided method nor recognized. Method should be either CVP or CVR")
+    
     # m is the number of unique (ID, Y) groups in the batch, meaning both singletts (group of cardinality 1)
     # and dublettes (group of cardinality 2). d is the number of unique dublettes in the batch. The number of singletts is hence
     # batch_size - 2*d
@@ -162,7 +177,7 @@ def compute_metrics(state, images, labels, d, l):
     n_t = m - d
 
     # forward pass
-    logits = state.apply_fn({'params': state.params}, images)
+    logits, repr = state.apply_fn({'params': state.params}, images)
 
     # initialize regularization term
     C = 0
@@ -174,7 +189,10 @@ def compute_metrics(state, images, labels, d, l):
         idxs = jnp.array([n_t + 2*i, n_t + 2*i + 1])
 
         # calculate variance of the logits inside the dublette
-        vars = jnp.nanvar(jnp.take(logits, idxs, axis=0), axis=0)
+        if method == "CVP":
+            vars = jnp.nanvar(jnp.take(logits, idxs, axis=0), axis=0)
+        else:
+            vars = jnp.nanvar(jnp.take(repr, idxs, axis=0), axis=0)
 
         C = C + jnp.sum(vars)
 
@@ -265,7 +283,7 @@ def get_grouped_batches(x, y, x_orig, y_orig, x_aug, key, batch_size, num_batche
 
 @jax.jit
 def pred_step(state, images):
-    logits = state.apply_fn({'params': state.params}, images)
+    logits, repr = state.apply_fn({'params': state.params}, images)
     return logits.argmax(axis=1)
 
 
@@ -429,7 +447,7 @@ def load_aug_mnist(c, seed):
     return train_data, vali_data, test1_data, test2_data
 
 
-def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_batches, c, d, l, key, tf_seed=0):
+def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_batches, c, d, l, key, method="CVP", tf_seed=0):
     """
     TODO: write docstring
     """
@@ -458,8 +476,8 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
             train_images = x_batches[j]
             train_labels = y_batches[j]
 
-            state = train_step(state, train_images, train_labels, d, l)
-            state = compute_metrics(state, train_images, train_labels, d, l)
+            state = train_step(state, train_images, train_labels, d, l, method)
+            state = compute_metrics(state, train_images, train_labels, d, l, method)
 
         #  metrics.compute() performs averaging s.t. it averages over the metrics of all batches in that epoch
         for metric, value in state.metrics.compute().items():
@@ -507,7 +525,7 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
 
     lr_str = str(learning_rate).replace(".", ",")
     l_str = str(l).replace(".", ",")
-    plt.savefig(f".\learning_curves\learning_curve_lr{lr_str}_l{l_str}_e{num_epochs}_bs{batch_size}.png")
+    plt.savefig(f".\learning_curves\learning_curve_{method}_lr{lr_str}_l{l_str}_e{num_epochs}_bs{batch_size}.png")
     plt.clf()
 
     best_epoch = max(enumerate(metrics_history['vali_accuracy']), key=lambda x: x[1])[0]
@@ -548,7 +566,7 @@ if __name__ == "__main__":
     for l in ls:
         key, subkey = jax.random.split(key)
         states, epoch, accuracy = train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, 
-                                          num_batches, c, d, l, subkey, tf_seed=0)
+                                          num_batches, c, d, l, subkey, method="CVP", tf_seed=0)
         
         if accuracy > best_accuracy:
             best_l = l
