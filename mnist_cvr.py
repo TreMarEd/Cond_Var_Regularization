@@ -747,8 +747,8 @@ if __name__ == "__main__":
 
     print(f"NON-REGULARIZED NON-ROTATED TEST ACCURACY = {t1_accuracy}")
     print(f"CVP NON-ROTATED TEST ACCURACY = {t1_accuracy_cvp}")
-    print(f"CVR ROTATED TEST ACCURACY = {t1_accuracy_cvr}")
+    print(f"CVR NON-ROTATED TEST ACCURACY = {t1_accuracy_cvr}")
 
-    print(f"\nNON-REGULARIZED NON-ROTATED TEST ACCURACY = {t2_accuracy}")
-    print(f"CVP NON-ROTATED TEST ACCURACY = {t2_accuracy_cvp}")
+    print(f"\nNON-REGULARIZED ROTATED TEST ACCURACY = {t2_accuracy}")
+    print(f"CVP ROTATED TEST ACCURACY = {t2_accuracy_cvp}")
     print(f"CVR ROTATED TEST ACCURACY = {t2_accuracy_cvr}")
