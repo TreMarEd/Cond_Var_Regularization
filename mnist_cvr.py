@@ -317,8 +317,8 @@ def create_aug_mnist(c, seed):
 
     '''
 
-    logging.info(
-        "\n#################### AUGMENTING MNIST DATA #################### \n")
+    logging.info("\n#################### AUGMENTING MNIST DATA #################### \n")
+    print("\n#################### AUGMENTING MNIST DATA #################### \n")
 
     n = 10000
 
@@ -465,8 +465,7 @@ def load_aug_mnist(c, seed):
         return create_aug_mnist(c, seed)
 
     else:
-        logging.info(
-            "\n#################### LOADING MNIST DATA #################### \n")
+        logging.info("\n#################### LOADING MNIST DATA #################### \n")
         print("\n#################### LOADING MNIST DATA #################### \n")
         x_train_sing = jnp.load(base_path + "\\train\\x_train_sing.npy")
         y_train_sing = jnp.load(base_path + "\\train\\y_train_sing.npy")
@@ -523,10 +522,8 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
     if method not in ["CVP", "CVR"]:
         raise ValueError("Provided method nor recognized. Method should be either CVP or CVR")
 
-    logging.info(
-        f"\n#################### START TRAINING {method} l = {l} ####################\n")
-    print(
-        f"\n#################### START TRAINING {method} l = {l} ####################\n")
+    logging.info(f"\n#################### START TRAINING {method} l = {l} ####################\n")
+    print(f"\n#################### START TRAINING {method} l = {l} ####################\n")
 
     tf.random.set_seed(tf_seed)
     cnn = CNN()
@@ -539,7 +536,6 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
 
     states = []
     for i in range(num_epochs):
-        print(f"CURRENT EPOCH = {i}")
 
         key, subkey = jax.random.split(key)
         x_batches, y_batches = get_grouped_batches(train_data["sing_features"], train_data["sing_labels"],
@@ -572,11 +568,12 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
             metrics_history[f'vali_{metric}'].append(value)
 
 
-        logging.info(f"train epoch: {i}, "f"loss: {metrics_history['train_loss'][-1]}, 
-                     "f"accuracy: {metrics_history['train_accuracy'][-1] * 100}")
-        logging.info(f"vali epoch: {i}, "f"loss: {metrics_history['vali_loss'][-1]},
-                      "f"accuracy: {metrics_history['vali_accuracy'][-1] * 100}")
+        logging.info(f"train epoch: {i}, loss: {metrics_history['train_loss'][-1]}, accuracy: {metrics_history['train_accuracy'][-1] * 100}")
+        logging.info(f"vali epoch: {i}, loss: {metrics_history['vali_loss'][-1]}, accuracy: {metrics_history['vali_accuracy'][-1] * 100}")
         logging.info("\n############################################################# \n")
+        print(f"train epoch: {i}, loss: {metrics_history['train_loss'][-1]}, accuracy: {metrics_history['train_accuracy'][-1] * 100}")
+        print(f"vali epoch: {i}, loss: {metrics_history['vali_loss'][-1]}, accuracy: {metrics_history['vali_accuracy'][-1] * 100}")
+        print("\n############################################################# \n")
 
     ################## PLOT AND SAVE LEARNING CURVE ##################
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
@@ -609,6 +606,9 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
 
     logging.info(f"best vali epoch: {best_epoch}")
     logging.info(f"best vali accuracy: {best_accuracy}")
+
+    print(f"best vali epoch: {best_epoch}")
+    print(f"best vali accuracy: {best_accuracy}")
 
     return states, best_epoch, best_accuracy
 
@@ -645,8 +645,8 @@ def model_selection(train_data, vali_data, num_epochs, learning_rate, batch_size
     if method not in ["CVP", "CVR"]:
         raise ValueError("Provided method nor recognized. Method should be either CVP or CVR")
 
-    logging.info(f"#################### PERFORMING MODEL SELECTION FOR L = {ls} ####################")
-    print(f"#################### PERFORMING MODEL SELECTION FOR L = {ls} ####################")
+    logging.info(f"#################### PERFORMING {method} MODEL SELECTION FOR l = {ls} ####################")
+    print(f"#################### PERFORMING {method} MODEL SELECTION FOR l = {ls} ####################")
 
     dic = {}
     best_l = None
@@ -668,6 +668,8 @@ def model_selection(train_data, vali_data, num_epochs, learning_rate, batch_size
     best_epoch = dic[str(best_l)]["epoch"]
     logging.info("\n#############################################################\n")
     logging.info(f"THE BEST REGULRAIZATION PARAMETER IS {best_l} AT EPOCH {best_epoch} WITH VALI ACCURACY {best_accuracy}")
+    print("\n#############################################################\n")
+    print(f"THE BEST REGULRAIZATION PARAMETER IS {best_l} AT EPOCH {best_epoch} WITH VALI ACCURACY {best_accuracy}")
 
     state = dic[str(best_l)]["states"][best_epoch]
     test1_state = state
@@ -681,6 +683,8 @@ def model_selection(train_data, vali_data, num_epochs, learning_rate, batch_size
 
     logging.info(f"\nACHIEVED NON-ROTATED {method} TEST ACCURACY: {test1_accuracy}")
     logging.info(f"\nACHIEVED ROTATED {method} TEST ACCURACY: {test2_accuracy}")
+    print(f"\nACHIEVED NON-ROTATED {method} TEST ACCURACY: {test1_accuracy}")
+    print(f"\nACHIEVED ROTATED {method} TEST ACCURACY: {test2_accuracy}")
 
     return state, test1_accuracy, test2_accuracy
 
@@ -708,7 +712,7 @@ if __name__ == "__main__":
     # regularization parameters on which to perform model selection
     ls = [0.01, 0.1, 1]
 
-    seed = 4342
+    seed = 8342
 
     ################## LOAD/CREATE DATA ##################
     key = jax.random.key(seed)
