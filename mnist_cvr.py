@@ -36,18 +36,20 @@ class CNN(nn.Module):
     """A simple CNN model."""
     @nn.compact
     def __call__(self, x):
+        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
+        x = nn.relu(x)
         x = nn.Conv(features=32, kernel_size=(5, 5), strides=2)(x)
         x = nn.relu(x)
-        x = nn.Conv(features=32, kernel_size=(4, 4), strides=2)(x)
+        x = nn.Conv(features=64, kernel_size=(5, 5), strides=2)(x)
         x = nn.relu(x)
-        x = nn.Conv(features=16, kernel_size=(3, 3), strides=2)(x)
-        x = nn.relu(x)
-        x = nn.Conv(features=16, kernel_size=(3, 3), strides=2)(x)
+        x = nn.Conv(features=64, kernel_size=(5, 5), strides=2)(x)
         x = nn.relu(x)
         x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
         x = x.reshape((x.shape[0], -1))
         # extract the learned representation and return it separately. This is needed for CVR regularization
         r = x
+        #x = nn.Dense(features=32)(x)
+        #x = nn.Dense(features=16)(x)
         x = nn.Dense(features=10)(x)
         return x, r
 
@@ -694,9 +696,9 @@ if __name__ == "__main__":
     num_batches = int(n / 100)
 
     # regularization parameters on which to perform model selection
-    ls = [0.01, 0.1, 1, 10]
+    ls = [0.01, 0.1, 1]
 
-    seed = 2244
+    seed = 6542
 
     ################## LOAD/CREATE DATA ##################
     key = jax.random.key(seed)
@@ -723,10 +725,10 @@ if __name__ == "__main__":
 
     logging.info(f"NON-REGULARIZED NON-ROTATED TEST ACCURACY = {t1_accuracy}")
     logging.info(f"CVP NON-ROTATED TEST ACCURACY = {t1_accuracy_cvp}")
-    logging.info(f"CVR ROTATED TEST ACCURACY = {t1_accuracy_cvr}")
+    logging.info(f"CVR NON-ROTATED TEST ACCURACY = {t1_accuracy_cvr}")
 
-    logging.info(f"\nNON-REGULARIZED NON-ROTATED TEST ACCURACY = {t2_accuracy}")
-    logging.info(f"CVP NON-ROTATED TEST ACCURACY = {t2_accuracy_cvp}")
+    logging.info(f"\nNON-REGULARIZED ROTATED TEST ACCURACY = {t2_accuracy}")
+    logging.info(f"CVP ROTATED TEST ACCURACY = {t2_accuracy_cvp}")
     logging.info(f"CVR ROTATED TEST ACCURACY = {t2_accuracy_cvr}")
 
     print("\n###########################################################################\n")
