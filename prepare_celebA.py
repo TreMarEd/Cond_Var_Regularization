@@ -8,6 +8,13 @@ import os
 import subprocess
 from PIL import Image
 
+
+
+
+
+
+
+
 # 000001 to 202599
 # train and vali: n = 20'000 c= 5'000, all Y=1 degraded
 # test1 n= 5344, all Y=1 degraded
@@ -21,23 +28,29 @@ base_path = r"C:\Users\Marius\Desktop\DAS\Cond_Var_Regularization"
 # number of CelebA images
 n = 202599
 
-# TODO: loop through all original images, resize them using PIL, save them in their own celeb directory
-# resizing an image with PIL
-#https://stackoverflow.com/questions/9174338/programmatically-change-image-resolution
-#im = Image.open("test.png")
-#im.save("test-600.png", dpi=(600,600))
-
-# TODO: loop through all resized images and run the following command on them where the quality needs to be N(30, 100)
-# save them in their own celeb directory
-
-for i in range(1, n + 1):
+for i in range(1, n+1):
+    print(i, "\n")
     i = str(i)
     # string with the right number of zeros for the celeb image name
     zs = (6 - len(i)) * "0"
-    image_name = zs + i
-    result = subprocess.run(["magick", "convert", "-quality", "60", r"C:\Users\Marius\Desktop\DAS\000001.jpg", 
-                             r"C:\Users\Marius\Desktop\DAS\000001__.jpg"], capture_output = True, text = True)
+    image_name = zs + i + ".jpg"
 
+    # TODO: create dir if does not exist
+
+    orig_im_path = base_path + fr"\CelebA\celeba\img_align_celeba\{image_name}"
+    resized_im_path = base_path + fr"\CelebA_resized\celeba\img_align_celeba\{image_name}"
+    deg_im_path = base_path + fr"\CelebA_resized_degraded\celeba\img_align_celeba\{image_name}"
+
+    im = Image.open(orig_im_path)
+    im_resized = im.resize((48, 64))
+    im_resized.save(resized_im_path)
+    quality = -10
+    # quality should be a positive number
+    while quality < 0:
+        quality = np.random.normal(loc=30., scale=10.0)
+    quality = str(int(quality))
+    result = subprocess.run(["magick", "convert", "-quality", quality, resized_im_path, deg_im_path], 
+                            capture_output = True, text = True)
 
 # TODO: randomly sample 2*20'000 + 2*5344 different indices: 20'000 for train, 20'000 for vali, 5344 for test1 and 5344 for test2
 
@@ -59,6 +72,7 @@ for i in range(1, n + 1):
 
 
 # unclear: will datasets.CelebA refuse the resized images? Does it make checksums?
+"""
 CelebA_data = datasets.CelebA(
     root=".\CelebA",
     split='all',
@@ -69,3 +83,4 @@ CelebA_data = datasets.CelebA(
 
 
 print("hoi")
+"""
