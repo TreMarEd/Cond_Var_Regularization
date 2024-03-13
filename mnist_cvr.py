@@ -36,23 +36,20 @@ class CNN(nn.Module):
     """A simple CNN model."""
     @nn.compact
     def __call__(self, x):
-        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x) # put stride 3 for 3 conv layers
+        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
         x = nn.relu(x)
-        x = nn.Conv(features=32, kernel_size=(5, 5), strides=2)(x)
+        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
         x = nn.relu(x)
-        x = nn.Conv(features=32, kernel_size=(5, 5), strides=2)(x)
+        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
         x = nn.relu(x)
-        x = nn.Conv(features=32, kernel_size=(5, 5), strides=2)(x)
+        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
         x = nn.relu(x)
         x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
         x = x.reshape((x.shape[0], -1))
         # extract the learned representation and return it separately. This is needed for CVR regularization
         r = x
-        #x = nn.Dense(features=32)(x)
-        #x = nn.Dense(features=16)(x)
         x = nn.Dense(features=10)(x)
         return x, r
-
 
 
 
@@ -601,7 +598,7 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
     plt.savefig(f".\learning_curves\learning_curve_{method}_lr{lr_str}_l{l_str}_e{num_epochs}_bs{batch_size}.png")
     plt.clf()
 
-    best_epoch = min(enumerate(metrics_history['vali_loss']), key=lambda x: x[1])[0]
+    best_epoch = max(enumerate(metrics_history['vali_accuracy']), key=lambda x: x[1])[0]
     best_accuracy = metrics_history['vali_accuracy'][best_epoch]
 
     return states, best_epoch, best_accuracy
@@ -709,8 +706,7 @@ if __name__ == "__main__":
     num_batches = int(n / 100)
 
     # regularization parameters on which to perform model selection
-    #ls = [0.01, 0.1, 1]
-    ls = [0, 0.001, 0.01, 0.1, 1]
+    ls = [0.01, 0.1, 1, 10]
 
     seed = 6542
 
@@ -719,7 +715,7 @@ if __name__ == "__main__":
     train_data, vali_data, test1_data, test2_data = load_aug_mnist(c, seed, n)
 
     ################## TRAIN MODELS ##################
-    '''
+    
     # run unregularized case as model selection with only l=0 to choose from, method chosen does not matter for l=0
     state, t1_accuracy, t2_accuracy = model_selection(train_data, vali_data, test1_data, test2_data, num_epochs, 
                                                       learning_rate, batch_size,num_batches, c, d, [0], key, 
@@ -729,12 +725,12 @@ if __name__ == "__main__":
     state_cvp, t1_accuracy_cvp, t2_accuracy_cvp = model_selection(train_data, vali_data, test1_data, test2_data, num_epochs, 
                                                                   learning_rate, batch_size, num_batches, c, d, ls, key, 
                                                                   method="CVP", tf_seed=0)
-    '''
+    
     # select regularization parameter for conditional variance of representation
     state_cvr, t1_accuracy_cvr, t2_accuracy_cvr = model_selection(train_data, vali_data, test1_data, test2_data,num_epochs, 
                                                                   learning_rate, batch_size, num_batches, c, d, ls, key, 
                                                                   method="CVR", tf_seed=0)
-    '''
+    
     logging.info("\n###########################################################################\n")
 
     logging.info(f"NON-REGULARIZED NON-ROTATED TEST ACCURACY = {t1_accuracy}")
@@ -744,13 +740,13 @@ if __name__ == "__main__":
     logging.info(f"\nNON-REGULARIZED ROTATED TEST ACCURACY = {t2_accuracy}")
     logging.info(f"CVP ROTATED TEST ACCURACY = {t2_accuracy_cvp}")
     logging.info(f"CVR ROTATED TEST ACCURACY = {t2_accuracy_cvr}")
-    '''
+    
     print("\n###########################################################################\n")
 
-    #print(f"NON-REGULARIZED NON-ROTATED TEST ACCURACY = {t1_accuracy}")
-    #print(f"CVP NON-ROTATED TEST ACCURACY = {t1_accuracy_cvp}")
+    print(f"NON-REGULARIZED NON-ROTATED TEST ACCURACY = {t1_accuracy}")
+    print(f"CVP NON-ROTATED TEST ACCURACY = {t1_accuracy_cvp}")
     print(f"CVR NON-ROTATED TEST ACCURACY = {t1_accuracy_cvr}")
 
-    #print(f"\nNON-REGULARIZED ROTATED TEST ACCURACY = {t2_accuracy}")
-    #print(f"CVP ROTATED TEST ACCURACY = {t2_accuracy_cvp}")
+    print(f"\nNON-REGULARIZED ROTATED TEST ACCURACY = {t2_accuracy}")
+    print(f"CVP ROTATED TEST ACCURACY = {t2_accuracy_cvp}")
     print(f"CVR ROTATED TEST ACCURACY = {t2_accuracy_cvr}")
