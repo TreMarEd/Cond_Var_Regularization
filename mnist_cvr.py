@@ -8,8 +8,11 @@ See README for details.
 ................
 
 TODO:
+- train_cnn is currently written such that it is assumed that train, vali and test1/2 have same size: needs to be rewritten
+- pack functions usable for both MNIST and CelebA into a utils directory
 [- save utils in different python files (after entire code including celeb is finished)]
 [- write readme (after entire code including celeb is finished)]
+[- new requirements.txt]
 """
 
 import tensorflow as tf
