@@ -1,71 +1,99 @@
+"""
+TODO: write intro here
+"""
+
 from torchvision import datasets
 from torchvision.transforms import ToTensor
 import numpy as np
 import os
+import shutil
 import subprocess
 from PIL import Image
 import jax
 import jax.numpy as jnp
 
 """
-TODO: rewrite the whole thing the following way:
-define a function that takes as input:
-    - an iterable of indices from which indices are to be sampled
-    - a list of arrays on which to evaluate the sampled indices
-    - the number of samples to be drawn from the list of indices
-    - seed
-and returns:
-    - a list of indices from which the sampled indices have been deleted
-    - a list of arrays corresponding to the input list evaluated at the sampled indices
-
+TODO: write a create_aug_celebA function that takes seed as argument
 TODO: write creation of Hat and Mustache dataset
-
+TODO: polish: docstrings, comments, formatting, readability
 """
 
-def name():
-    pass
+
+def sample_arrays(arrays, n, key, axis=0):
+
+    shapes = [jnp.shape(array) for array in arrays]
+    if not all(shape == shapes[0] for shape in shapes):
+        raise ValueError("All input arrays need to have the same shape")
+    
+    idxs = jnp.range(shapes[0][axis])
+    key, subkey = jax.random.split(key)
+    sample = jax.random.choice(subkey, idxs, shape=(n,), replace=False)
+
+    sample_arrays = [jnp.take(array, sample, axis=axis) for array in arrays]
+    rest_arrays = [jnp.delete(arrays, sample, axis=axis) for array in arrays]
+
+    return sample_arrays, rest_arrays
 
 
-base_path = r"C:\Users\Marius\Desktop\DAS\Cond_Var_Regularization"
 
-# number of CelebA images
-n_tot = 202599
-# resized size of the image along axis 0
-resized_0 = 48
-# resized size of the image along axis 1
-resized_1 = 64
+def resize_degrade_CelebA(CelebA_path, resize_0, resize_1, seed):
 
-if not os.path.exists(base_path + r"\CelebA_resized") and os.path.exists(base_path + r"\CelebA_resized_degraded"):
+    if not os.path.exists(CelebA_path):
+        raise Exception("The provided path to the original Celeb A dataset does not exist.")
+    
+    # create the relevant directories and copy all relevant files
+    orig_path = CelebA_path + r"\celeba"
+    resized_path = CelebA_path + fr"_resized{resize_0}x{resize_1}_seed{seed}\celeba"
+    resized_degraded_path = CelebA_path + fr"_resized{resize_0}x{resize_1}_degraded_seed{seed}\celeba"
 
-    for i in range(1, n_tot + 1):
-        
+    os.makedirs(resized_path + r"\img_align_celeba")
+    os.makedirs(resized_degraded_path + r"\img_align_celeba")
+
+    # only txt files should be copied, and not the original images
+    txt_files = [f for f in os.listdir(orig_path) if os.path.isfile(os.path.join(orig_path, f))]
+
+    for f in txt_files:
+        shutil.copyfile(os.path.join(orig_path, f), os.path.join(resized_path, f))
+        shutil.copyfile(os.path.join(orig_path, f), os.path.join(resized_degraded_path, f))
+
+    # total number of CelebA images
+    n_tot = 202599
+
+    for i in range(1, n_tot+1):
+        print(i)
         i = str(i)
         # string with the right number of zeros for the celeb image name
         zs = (6 - len(i)) * "0"
         image_name = zs + i + ".jpg"
 
-        orig_im_path = base_path + fr"\CelebA\celeba\img_align_celeba\{image_name}"
-        resized_im_path = base_path + fr"\CelebA_resized\celeba\img_align_celeba\{image_name}"
-        deg_im_path = base_path + fr"\CelebA_resized_degraded\celeba\img_align_celeba\{image_name}"
+        orig_im_path = orig_path + fr"\img_align_celeba\{image_name}"
+        resized_im_path = resized_path + fr"\img_align_celeba\{image_name}"
+        deg_im_path = resized_degraded_path + fr"\img_align_celeba\{image_name}"
 
         im = Image.open(orig_im_path)
-        im_resized = im.resize((resized_0, resized_1))
+        im_resized = im.resize((resize_0, resize_1))
         im_resized.save(resized_im_path)
 
-        quality = -10
+        quality = -100
         # quality should be a positive number
+        key = jax.random.key(seed)
         while quality < 0:
-            quality = np.random.normal(loc=30., scale=10.0)
+            key, subkey = jax.random.split(key)
+            # degrade with normal distribution with mean 30 and Variance 10^2
+            quality = 30 + 10 * jax.random.normal(subkey, 1)
 
         quality = str(int(quality))
-        result = subprocess.run(["magick", "convert", "-quality", quality, resized_im_path, deg_im_path], 
-                                capture_output = True, text = True)
+        subprocess.run(["magick", "convert", "-quality", quality, resized_im_path, deg_im_path], 
+                       capture_output = True, text = True)
+        
+        return None
 
-CelebA = datasets.CelebA(root=".\CelebA_resized_degraded", split='all', target_type='attr', 
-                         transform=ToTensor(), download=True)
 
-CelebA_d = datasets.CelebA(root=".\CelebA_resized_degraded", split='all', target_type='attr', 
-                                  transform=ToTensor(), download=True)
+
+def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, seed):
+    pass
+
+
 
 ################################### CREATE EYEGLASS DATASETS ###################################
 """
@@ -78,7 +106,7 @@ for test1: sample take all Y=0 images from degraded, and all Y=0 images from deg
 attributes and their index for me to use and the count statistics in the dataset: 
 Eyeglasses: (15, 13193), mustache: (22, 8417), Wearing_Hat: (35, 9818)
 """
-
+"""
 # separate datapoints according to whether Y=0 or Y=1
 # for Y=0 use non-degraded data set, for Y=1 degraded dataset. However, for data augmentation non-degraded is also needed for Y=1
 
@@ -219,7 +247,6 @@ tmp = jnp.take(x_1_d, idxs_test1_1, axis=0)
 x_test1 = x_test1.at[-m_test1:, :, :, :].set(tmp)
 y_test1 = y_test1.at[-m_test1:].set(jnp.ones(m_test1))
 
-
 # initialize all arrays for test2. test sets contain no augmentation scheme, so only a feature and a label array is needed
 x_test2 = jnp.zeros((n_test2, resized_1, resized_0, 3))
 y_test2 = jnp.zeros((n_test2,))
@@ -259,7 +286,27 @@ jnp.save(dir_path + r"\test1\y_test1.npy", y_test1)
 jnp.save(dir_path + r"\test2\x_test2.npy", x_test2)
 jnp.save(dir_path + r"\test2\y_test2.npy", y_test2)
 
+"""
 
+if __name__ == "__main__":
+
+    # if not already done, download original dataset using
+    #datasets.CelebA(root=f".\CelebA", split='all', target_type='attr', transform=ToTensor(), download=True)
+
+    CelebA_path = r"C:\Users\Marius\Desktop\DAS\Cond_Var_Regularization\CelebA"
+    
+    resize_0 = 48
+    resize_1 = 64
+    seed = 5297
+
+    resize_degrade_CelebA(CelebA_path, resize_0, resize_1, seed)
+
+    CelebA = datasets.CelebA(root=f".\CelebA_resized{resize_0}x{resize_1}_seed{seed}", split='all', target_type='attr', 
+                         transform=ToTensor(), download=True)
+    CelebA_d = datasets.CelebA(root=f".\CelebA_resized{resize_0}x{resize_1}_degraded_seed{seed}", split='all', target_type='attr', 
+                                  transform=ToTensor(), download=True)
+    
+    print("hoi")
 
 
 
