@@ -18,6 +18,7 @@ domain shift invariance. The data is prepared the following way:
 
 from torchvision import datasets
 from torchvision.transforms import ToTensor
+from flax import linen as nn
 import numpy as np
 import os
 import shutil
@@ -30,6 +31,25 @@ import logging
 
 logging.basicConfig(level=logging.INFO, filename=".\logfile.txt", filemode="w+",
                     format="%(asctime)-15s %(levelname)-8s %(message)s")
+
+class CNN_celeba(nn.Module):
+    """A simple CNN model."""
+    @nn.compact
+    def __call__(self, x):
+        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
+        x = nn.relu(x)
+        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
+        x = nn.relu(x)
+        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
+        x = nn.relu(x)
+        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
+        x = nn.relu(x)
+        x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
+        x = x.reshape((x.shape[0], -1))
+        # extract the learned representation and return it separately. This is needed for CVR regularization
+        r = x
+        x = nn.Dense(features=10)(x)
+        return x, r
 
 
 
