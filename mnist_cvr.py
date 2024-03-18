@@ -8,7 +8,14 @@ See README for details.
 ................
 
 TODO:
+- call it cnn_mnist
 - train_cnn is currently written such that it is assumed that train, vali and test1/2 have same size: needs to be rewritten
+    - needs to take cnn as argument
+    - basically need a separate c argument for vali in 
+            vali_state = compute_metrics(vali_state, vali_data["features"], vali_data["labels"], d=c, l=l)
+
+- create_train_state currently assumes mnist shape: generalize to arbitrary shapes to be applicable to celebA
+- rewrite load_aug_mnist such that it is also applicable for celeba
 - pack functions usable for both MNIST and CelebA into a utils directory
 [- save utils in different python files (after entire code including celeb is finished)]
 [- write readme (after entire code including celeb is finished)]

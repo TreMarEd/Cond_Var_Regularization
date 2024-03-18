@@ -28,7 +28,6 @@ import jax.numpy as jnp
 import warnings
 
 
-
 def resize_degrade_CelebA(CelebA_path, resize_0, resize_1, seed):
     '''
     Given the original CelebA dataset and an RNG seed saves a resized version of the original dataset 
