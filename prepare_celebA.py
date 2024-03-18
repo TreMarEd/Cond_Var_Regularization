@@ -26,6 +26,11 @@ from PIL import Image
 import jax
 import jax.numpy as jnp
 import warnings
+import logging
+
+logging.basicConfig(level=logging.INFO, filename=".\logfile.txt", filemode="w+",
+                    format="%(asctime)-15s %(levelname)-8s %(message)s")
+
 
 
 def resize_degrade_CelebA(CelebA_path, resize_0, resize_1, seed):
@@ -62,8 +67,7 @@ def resize_degrade_CelebA(CelebA_path, resize_0, resize_1, seed):
         os.makedirs(resized_degraded_path + r"\img_align_celeba")
 
     # only txt files should be copied, and not the original images
-    txt_files = [f for f in os.listdir(
-        orig_path) if os.path.isfile(os.path.join(orig_path, f))]
+    txt_files = [f for f in os.listdir(orig_path) if os.path.isfile(os.path.join(orig_path, f))]
 
     for f in txt_files:
         shutil.copyfile(os.path.join(orig_path, f), os.path.join(resized_path, f))
@@ -133,7 +137,7 @@ def sample_arrays(arrays, n, key, axis=0):
     return sample_arrays, rest_arrays
 
 
-def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, label_idx, seed):
+def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, label_idx, resize_0, resize_1, seed):
     '''
     Provided paths to datasets of degraded and non-degraded CelebA images, creates and persists the augmentd Celeb A 
     dataset for the conditional variance regularization experiment. The created dataset contains a test and validation 
@@ -230,7 +234,6 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
     # c is the number of augmented datapoints
     c_train = int(m_train * f_aug)
     c_vali = int(m_vali * f_aug)
-    # final dataset will have n + m*f datapoints, of which m + m*f will have Y=1, where m*f is the number of augmented datapoints
 
     ################################### create train data ###################################
     key, subkey = jax.random.split(key)
@@ -241,13 +244,13 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
     
     x_train_sing = jnp.vstack((x_0_nd_sample, x_1_d_sample))
     y_train_sing = jnp.hstack((jnp.zeros((n_train-m_train)), jnp.ones((m_train - c_train))))
-    y_train_sing = y_train_sing.astype(jnp.int32)
+    y_train_sing = y_train_sing
 
     key, subkey = jax.random.split(key)
     [x_train_orig, x_train_aug], [x_1_d, x_1_nd] = sample_arrays([x_1_d, x_1_nd], m_train - c_train, subkey)
     
     # all dublettes have Y=1
-    y_train_orig = jnp.ones((c_train,)).astype(jnp.int32)
+    y_train_orig = jnp.ones((c_train,))
 
     ################################### create vali data ###################################
     key, subkey = jax.random.split(key)
@@ -258,13 +261,29 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
     
     x_vali_sing = jnp.vstack((x_0_nd_sample, x_1_d_sample))
     y_vali_sing = jnp.hstack((jnp.zeros((n_vali-m_vali)), jnp.ones((m_vali - c_vali))))
-    y_vali_sing = y_vali_sing.astype(jnp.int32)
 
     key, subkey = jax.random.split(key)
     [x_vali_orig, x_vali_aug], [x_1_d, x_1_nd] = sample_arrays([x_1_d, x_1_nd], m_vali - c_vali, subkey)
     
     # all dublettes have Y=1
-    y_vali_orig = jnp.ones((c_vali,)).astype(jnp.int32)
+    y_vali_orig = jnp.ones((c_vali,))
+
+    # the vali data does not have to be saved separately: this is only done for the test set to efficiently
+    # create training batches during training: the dublettes should be at the end of the batch with data 
+    # points in the same group consecutive to each other. One can directly prepare the vali data in this fashion here
+    y_vali = jnp.hstack((y_vali_sing, y_vali_orig, y_vali_orig)).astype(jnp.int32)
+
+    # number of singlett data points
+    n_s = n_vali - c_vali
+
+    x_vali = jnp.zeros((n_vali + c_vali, resize_0, resize_1, 3))
+    x_vali = x_vali.at[:n_s, :, :, :].set(x_vali_sing)
+
+    for j in range(c_vali):
+        # first add the original data point
+        x_vali = x_vali.at[n_s + 2*j, :, :, :].set(x_vali_orig[j, :, :, :])
+        # then add the augmented data point directly afterward
+        x_vali = x_vali.at[n_s + (2*j)+1, :, :, :].set(x_vali_aug[j, :, :, :])
 
     ################################### create test1 and test2 data ###################################
     key, subkey = jax.random.split(key)
@@ -301,11 +320,8 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
     jnp.save(dir_path + r"\train\x_train_aug.npy", x_train_aug)
     jnp.save(dir_path + r"\train\y_train_orig.npy", y_train_orig)
 
-    jnp.save(dir_path + r"\vali\x_vali_sing.npy", x_vali_sing)
-    jnp.save(dir_path + r"\vali\y_vali_sing.npy", y_vali_sing)
-    jnp.save(dir_path + r"\vali\x_vali_orig.npy", x_vali_orig)
-    jnp.save(dir_path + r"\vali\x_vali_aug.npy", x_vali_aug)
-    jnp.save(dir_path + r"\vali\y_vali_orig.npy", y_vali_orig)
+    jnp.save(dir_path + r"\vali\x_vali.npy", x_vali)
+    jnp.save(dir_path + r"\vali\y_vali.npy", y_vali)
 
     jnp.save(dir_path + r"\test1\x_test1.npy", x_test1)
     jnp.save(dir_path + r"\test1\y_test1.npy", y_test1)
@@ -316,7 +332,7 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
     return None
 
 
-def create_CelebA(base_path, n_train, n_vali, n_test, f_1, label_idx, seed):
+def create_CelebA(base_path, n_train, n_vali, n_test, f_1, label_idx, resize_0, resize_1, seed):
     '''
     Provided paths to datasets of degraded and non-degraded CelebA images, creates and persists the non-augmentd Celeb A 
     dataset for the conditional variance regularization experiment. 
@@ -339,7 +355,6 @@ def create_CelebA(base_path, n_train, n_vali, n_test, f_1, label_idx, seed):
 
     Returns:
         None
-
     '''
     
     print(f"########################### CREATING NON-AUGMENTED CELEBA FOR LABEL {label_idx} ###########################")
@@ -444,7 +459,7 @@ def create_CelebA(base_path, n_train, n_vali, n_test, f_1, label_idx, seed):
     y_test2 = y_test2.astype(jnp.int32)
     
     ################################### persist everything ###################################
-    dir_path = base_path + fr"\nonaugmented_CelebA_seed{seed}_label{label_idx}"
+    dir_path = base_path + fr"\nonaugmented_CelebA_resized{resize_0}x{resize_1}_seed{seed}_label{label_idx}"
     if not os.path.exists(dir_path):
         os.makedirs(dir_path + r"\train")
         os.makedirs(dir_path + r"\vali")
@@ -464,6 +479,63 @@ def create_CelebA(base_path, n_train, n_vali, n_test, f_1, label_idx, seed):
     jnp.save(dir_path + r"\test2\y_test2.npy", y_test2)
 
     return None
+
+
+def load_celeba(augmented, base_path, resize_0, resize_1, seed, label_idx):
+    '''
+    Parameters:
+        augmented (bool): boolean stating whether to load an augmented or non-augmented dataset
+        base_path (strin): path containing the directory created by a previous call to create_CelebA or
+                           create_augmented_CelebA
+        resize_0 (int): the resolution along the first axis of the images to be loaded
+        resize_1 (int): the resolution along the second axis of the images to be loaded
+        seed (int): seed that was used to create the dataset to be loaded in a previous call to create_CelebA or
+                    create_augmented_CelebA
+        label_idx (int): index of the label that was used to create the dataset, f.e. 15 = eyeglasses
+       
+    Returns:
+        train_data (dic): dictionary with keys "sing_features", "sing_labels", "dub_orig_featrues", "dub_aug_features", "dub_labels".
+    '''
+    if augmented:
+        dir_path = base_path + fr"\augmented_CelebA_resized{resize_0}x{resize_1}_seed{seed}_label{label_idx}"
+    else: 
+        dir_path = base_path + fr"\nonaugmented_CelebA_resized{resize_0}x{resize_1}_seed{seed}_label{label_idx}"
+
+    if not os.path.exists(dir_path):
+        raise OSError(2, 'No such file or directory', dir_path)
+
+    print("\n#################### LOADING AUGMENTED CELEBA DATA #################### \n")
+    if augmented:
+        x_train_sing = jnp.load(dir_path + "\\train\\x_train_sing.npy")
+        y_train_sing = jnp.load(dir_path + "\\train\\y_train_sing.npy")
+        x_train_orig = jnp.load(dir_path + "\\train\\x_train_orig.npy")
+        y_train_orig = jnp.load(dir_path + "\\train\\y_train_orig.npy")
+        x_train_aug = jnp.load(dir_path + "\\train\\x_train_aug.npy")
+    
+    else:
+        x_train = jnp.load(dir_path + "\\train\\x_train.npy")
+        y_train = jnp.load(dir_path + "\\train\\y_train.npy")
+
+    x_vali = jnp.load(dir_path + "\\vali\\x_vali.npy")
+    y_vali = jnp.load(dir_path + "\\vali\\y_vali.npy")
+
+    x_test1 = jnp.load(dir_path + "\\test\\x_test1.npy")
+    x_test2 = jnp.load(dir_path + "\\test\\x_test2.npy")
+    y_test = jnp.load(dir_path + "\\test\\y_test.npy")
+
+    if augmented:
+        train_data = {"sing_features": x_train_sing, "sing_labels": y_train_sing, "dub_orig_features": x_train_orig,
+                      "dub_labels": y_train_orig, "dub_aug_features": x_train_aug}
+        
+    else:
+        train_data = {"features": x_train, "labels": y_train}
+
+    vali_data = {"features": x_vali, "labels": y_vali}
+
+    test1_data = {"features": x_test1, "labels": y_test}
+    test2_data = {"features": x_test2, "labels": y_test}
+
+    return train_data, vali_data, test1_data, test2_data
 
 
 if __name__ == "__main__":
@@ -487,8 +559,8 @@ if __name__ == "__main__":
     CelebA_path = base_path + r"\CelebA"
     #resize_degrade_CelebA(CelebA_path, resize_0, resize_1, seed)
 
-    create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, aug_label, seed)
-    create_CelebA(base_path, n_train, n_vali, n_test, f_1, non_aug_label, seed)
+    create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, aug_label, resize_0, resize_1, seed)
+    create_CelebA(base_path, n_train, n_vali, n_test, f_1, non_aug_label, resize_0, resize_1, seed)
 
 
  

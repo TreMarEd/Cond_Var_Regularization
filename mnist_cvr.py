@@ -8,14 +8,6 @@ See README for details.
 ................
 
 TODO:
-- call it cnn_mnist
-- train_cnn is currently written such that it is assumed that train, vali and test1/2 have same size: needs to be rewritten
-    - needs to take cnn as argument
-    - basically need a separate c argument for vali in 
-            vali_state = compute_metrics(vali_state, vali_data["features"], vali_data["labels"], d=c, l=l)
-
-- create_train_state currently assumes mnist shape: generalize to arbitrary shapes to be applicable to celebA
-- rewrite load_aug_mnist such that it is also applicable for celeba
 - pack functions usable for both MNIST and CelebA into a utils directory
 [- save utils in different python files (after entire code including celeb is finished)]
 [- write readme (after entire code including celeb is finished)]
@@ -42,7 +34,7 @@ logging.basicConfig(level=logging.INFO, filename=".\logfile.txt", filemode="w+",
                     format="%(asctime)-15s %(levelname)-8s %(message)s")
 
 
-class CNN(nn.Module):
+class CNN_mnist(nn.Module):
     """A simple CNN model."""
     @nn.compact
     def __call__(self, x):
@@ -62,7 +54,6 @@ class CNN(nn.Module):
         return x, r
 
 
-
 @struct.dataclass
 class Metrics(metrics.Collection):
     '''Metrics class is the attribute of the training state that saves the accuracy and the loss'''
@@ -75,10 +66,9 @@ class TrainState(train_state.TrainState):
     metrics: Metrics
 
 
-def create_train_state(module, rng, learning_rate):
+def create_train_state(module, rng, size_0, size_1, learning_rate):
     """Creates an initial `TrainState`."""
-    # mnist is 28x28
-    params = module.init(rng, jnp.ones([1, 28, 28, 1]))['params']
+    params = module.init(rng, jnp.ones([1, size_0, size_1, 1]))['params']
 
     tx = optax.adam(learning_rate)
 
@@ -483,7 +473,8 @@ def load_aug_mnist(c, seed, n):
     return train_data, vali_data, test1_data, test2_data
 
 
-def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_batches, c, d, l, key, method="CVP", tf_seed=0):
+def train_cnn(cnn, train_data, vali_data, num_epochs, learning_rate, batch_size, num_batches, c_vali, d, l, 
+              key, size_0, size_1, method="CVP", tf_seed=0):
     '''
     Given data, all relevant learning parameters, and a regularization method, returns a list containing the training state of 
     each epoch and the epoch that achieved the best validation score.
@@ -518,9 +509,8 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
     print(f"\n#################### START TRAINING {method} l = {l} ####################\n")
 
     tf.random.set_seed(tf_seed)
-    cnn = CNN()
     key, subkey = jax.random.split(key)
-    state = create_train_state(cnn, subkey, learning_rate)
+    state = create_train_state(cnn, subkey, size_0, size_1, learning_rate)
 
     metrics_history = {'train_loss': [], 'train_accuracy': [], 'vali_loss': [],
                        'vali_accuracy': [], 'test1_loss': [], 'test1_accuracy': [],
@@ -552,7 +542,7 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
         # Compute metrics on the vali set after each training epoch
         # make copy of  current training state because  saved metrics will be overwritten
         vali_state = state
-        vali_state = compute_metrics(vali_state, vali_data["features"], vali_data["labels"], d=c, l=l)
+        vali_state = compute_metrics(vali_state, vali_data["features"], vali_data["labels"], d=c_vali, l=l)
 
         for metric, value in vali_state.metrics.compute().items():
             metrics_history[f'vali_{metric}'].append(value)
@@ -614,8 +604,8 @@ def train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size, num_
     return states, best_epoch, best_accuracy
 
 
-def model_selection(train_data, vali_data, test1_data, test2_data, num_epochs, learning_rate, batch_size, num_batches,
-                    c, d, ls, key, method="CVP", tf_seed=0):
+def model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, learning_rate, batch_size, num_batches,
+                    c_vali, d, ls, key, size_0, size_1, method="CVP", tf_seed=0):
     '''
     Given data, all relevant learning parameters, a regularization method and a list of regularization parameters to be validated
     returns the final training state of the model that achieves the best validation score.
@@ -657,8 +647,8 @@ def model_selection(train_data, vali_data, test1_data, test2_data, num_epochs, l
 
     for l in ls:
         key, subkey = jax.random.split(key)
-        states, epoch, accuracy = train_cnn(train_data, vali_data, num_epochs, learning_rate, batch_size,
-                                            num_batches, c, d, l, subkey, method, tf_seed)
+        states, epoch, accuracy = train_cnn(cnn, train_data, vali_data, num_epochs, learning_rate, batch_size,
+                                            num_batches, c_vali, d, l, subkey, size_0, size_1, method, tf_seed)
 
         if accuracy > best_accuracy:
             best_l = l
@@ -725,21 +715,21 @@ if __name__ == "__main__":
     train_data, vali_data, test1_data, test2_data = load_aug_mnist(c, seed, n)
 
     ################## TRAIN MODELS ##################
-    
+    cnn = CNN_mnist()
     # run unregularized case as model selection with only l=0 to choose from, method chosen does not matter for l=0
-    state, t1_accuracy, t2_accuracy = model_selection(train_data, vali_data, test1_data, test2_data, num_epochs, 
-                                                      learning_rate, batch_size,num_batches, c, d, [0], key, 
-                                                      method="CVP", tf_seed=0)
+    state, t1_accuracy, t2_accuracy = model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
+                                                      learning_rate, batch_size, num_batches, c, d, [0], key,
+                                                      size_0=28, size_1=28, method="CVP", tf_seed=0)
 
     # select regularization parameter for conditional variance of prediction
-    state_cvp, t1_accuracy_cvp, t2_accuracy_cvp = model_selection(train_data, vali_data, test1_data, test2_data, num_epochs, 
+    state_cvp, t1_accuracy_cvp, t2_accuracy_cvp = model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
                                                                   learning_rate, batch_size, num_batches, c, d, ls, key, 
-                                                                  method="CVP", tf_seed=0)
+                                                                  size_0=28, size_1=28, method="CVP", tf_seed=0)
     
     # select regularization parameter for conditional variance of representation
-    state_cvr, t1_accuracy_cvr, t2_accuracy_cvr = model_selection(train_data, vali_data, test1_data, test2_data,num_epochs, 
+    state_cvr, t1_accuracy_cvr, t2_accuracy_cvr = model_selection(cnn, train_data, vali_data, test1_data, test2_data,num_epochs, 
                                                                   learning_rate, batch_size, num_batches, c, d, ls, key, 
-                                                                  method="CVR", tf_seed=0)
+                                                                  size_0=28, size_1=28, method="CVR", tf_seed=0)
     
     logging.info("\n###########################################################################\n")
 
