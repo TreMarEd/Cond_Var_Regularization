@@ -44,9 +44,11 @@ class CNN_celeba(nn.Module):
         x = nn.activation.leaky_relu(x)
         x = nn.Conv(features=64, kernel_size=(5, 5), strides=2)(x)
         x = nn.activation.leaky_relu(x)
+        x = nn.Conv(features=128, kernel_size=(5, 5), strides=2)(x)
+        x = nn.activation.leaky_relu(x)
         #x = nn.Conv(features=128, kernel_size=(5, 5), strides=2)(x)
         #x = nn.activation.leaky_relu(x)
-        x = nn.avg_pool(x, window_shape=(3, 3), strides=(3, 3))
+        #x = nn.avg_pool(x, window_shape=(4, 4), strides=(4, 4))
         x = x.reshape((x.shape[0], -1))
         # extract the learned representation and return it separately. This is needed for CVR regularization
         r = x
@@ -571,12 +573,12 @@ if __name__ == "__main__":
     resize_1 = 64
     seed = 5297
     base_path = r"C:\Users\Marius\Desktop\DAS\Cond_Var_Regularization"
-    #n_train = 20000
-    n_train = 1000
-    #n_vali = 10000
-    n_vali = 1000
-    #n_test = 10000
-    n_test = 1000
+    n_train = 20000
+    #n_train = 1000
+    n_vali = 10000
+    #n_vali = 1000
+    n_test = 10000
+    #n_test = 1000
     f_1 = 0.26
     f_aug = 0.5
     # attributes and their index for me to use and the count statistics in the dataset:
@@ -587,8 +589,8 @@ if __name__ == "__main__":
     
 
     ################## DEFINE FREE PARAMETES  ##################
-    num_epochs = 15
-    learning_rate = 0.01
+    num_epochs = 30
+    learning_rate = 0.005
 
     # n is the number of original data points in training set. Needs to be an integer multiple of 100 
     # for below parameter choices to be optimal: batches are sorted such that always the last 2*d datapoints
@@ -598,20 +600,20 @@ if __name__ == "__main__":
 
     # number of data points to be augmented by rotation, equal to number of dublette groups in the final data set
     #c = 2600
-    c = 130
-    #batch_size = 226
-    batch_size = 113
+    #c = 130
+    batch_size = 226
+    #batch_size = 113
     # d is the number of dublette (Y, ID) groups per batch
-    #d = 26
-    d = 13
-    #num_batches = 100
-    num_batches  = 10
+    d = 26
+    #d = 13
+    num_batches = 100
+    #num_batches  = 10
 
     # regularization parameters on which to perform model selection
     ls = [0.01, 1]
 
     #resize_degrade_CelebA(CelebA_path, resize_0, resize_1, seed)
-    create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, aug_label, resize_0, resize_1, seed)
+    #create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, aug_label, resize_0, resize_1, seed)
 
     # need to reduce vali and test size as there are not enough mustaches in the dataset
     #n_vali = 5000
@@ -628,12 +630,14 @@ if __name__ == "__main__":
     key = jax.random.key(seed)
     key, subkey = jax.random.split(key)
     state, t1_accuracy, t2_accuracy = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
-                                                      learning_rate, batch_size, num_batches, 130, d, [0], subkey,
+                                                      learning_rate, batch_size, num_batches, 1300, d, [0], subkey,
                                                       size_0=64, size_1=48, ccs=3, method="CVP", tf_seed=0)
 
     # select regularization parameter for conditional variance of prediction
     key = jax.random.key(seed)
     key, subkey = jax.random.split(key)
+    
+    """
     state_cvp, t1_accuracy_cvp, t2_accuracy_cvp = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
                                                                   learning_rate, batch_size, num_batches, 130, d, ls, key, 
                                                                   size_0=64, size_1=48, ccs=3, method="CVP", tf_seed=0)
@@ -646,21 +650,21 @@ if __name__ == "__main__":
                                                                   size_0=64, size_1=48, ccs=3, method="CVR", tf_seed=0)
     
     logging.info("\n###########################################################################\n")
-    logging.info(f"NON-REGULARIZED NON-ROTATED TEST ACCURACY = {t1_accuracy}")
-    logging.info(f"CVP NON-ROTATED TEST ACCURACY = {t1_accuracy_cvp}")
-    logging.info(f"CVR NON-ROTATED TEST ACCURACY = {t1_accuracy_cvr}")
+    logging.info(f"NON-REGULARIZED NON-SHIFTED TEST ACCURACY = {t1_accuracy}")
+    logging.info(f"CVP NON-SHIFTED TEST ACCURACY = {t1_accuracy_cvp}")
+    logging.info(f"CVR NON-SHIFTED TEST ACCURACY = {t1_accuracy_cvr}")
 
-    logging.info(f"\nNON-REGULARIZED ROTATED TEST ACCURACY = {t2_accuracy}")
-    logging.info(f"CVP ROTATED TEST ACCURACY = {t2_accuracy_cvp}")
-    logging.info(f"CVR ROTATED TEST ACCURACY = {t2_accuracy_cvr}")
+    logging.info(f"\nNON-REGULARIZED SHIFTED TEST ACCURACY = {t2_accuracy}")
+    logging.info(f"CVP SHIFTED TEST ACCURACY = {t2_accuracy_cvp}")
+    logging.info(f"CVR SHIFTED TEST ACCURACY = {t2_accuracy_cvr}")
     
     print("\n###########################################################################\n")
-    print(f"NON-REGULARIZED NON-ROTATED TEST ACCURACY = {t1_accuracy}")
-    print(f"CVP NON-ROTATED TEST ACCURACY = {t1_accuracy_cvp}")
-    print(f"CVR NON-ROTATED TEST ACCURACY = {t1_accuracy_cvr}")
+    print(f"NON-REGULARIZED NON-SHIFTED TEST ACCURACY = {t1_accuracy}")
+    print(f"CVP NON-SHIFTED TEST ACCURACY = {t1_accuracy_cvp}")
+    print(f"CVR NON-SHIFTED TEST ACCURACY = {t1_accuracy_cvr}")
 
-    print(f"\nNON-REGULARIZED ROTATED TEST ACCURACY = {t2_accuracy}")
-    print(f"CVP ROTATED TEST ACCURACY = {t2_accuracy_cvp}")
-    print(f"CVR ROTATED TEST ACCURACY = {t2_accuracy_cvr}")
-
+    print(f"\nNON-REGULARIZED SHIFTED TEST ACCURACY = {t2_accuracy}")
+    print(f"CVP SHIFTED TEST ACCURACY = {t2_accuracy_cvp}")
+    print(f"CVR SHIFTED TEST ACCURACY = {t2_accuracy_cvr}")
+    """
  

@@ -169,7 +169,7 @@ def compute_metrics(state, images, labels, d, l, method="CVP"):
 
     return state
 
-
+#TODO: find out why this crashes sometimes without error warning
 #@Partial(jax.jit, static_argnums=(5, 6, 7, 9, 10, 11))
 def get_grouped_batches(x, y, x_orig, y_orig, x_aug, size_0, size_1, ccs, key, batch_size, num_batches, d):
     '''
@@ -287,13 +287,21 @@ def train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, le
                        'test2_loss': [], 'test2_accuracy': []}
 
     states = []
+
+    print("GETTING GROUPED BATCHES")
+    x_batches, y_batches = get_grouped_batches(train_data["sing_features"], train_data["sing_labels"],
+                                                   train_data["dub_orig_features"], train_data["dub_labels"],
+                                                   train_data["dub_aug_features"], size_0, size_1, ccs, subkey, batch_size, num_batches, d)
+    print("DONE GETTING GROUPED BATCHES")
+    
     for i in range(num_epochs):
 
         key, subkey = jax.random.split(key)
-
+        """
         x_batches, y_batches = get_grouped_batches(train_data["sing_features"], train_data["sing_labels"],
                                                    train_data["dub_orig_features"], train_data["dub_labels"],
                                                    train_data["dub_aug_features"], size_0, size_1, ccs, subkey, batch_size, num_batches, d)
+        """
         for j in range(num_batches):
             train_images = x_batches[j]
             train_labels = y_batches[j]
@@ -445,9 +453,9 @@ def model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epoc
     test1_accuracy = test1_state.metrics.compute()["accuracy"]
     test2_accuracy = test2_state.metrics.compute()["accuracy"]
 
-    logging.info(f"\nACHIEVED NON-ROTATED {method} TEST ACCURACY: {test1_accuracy}")
-    logging.info(f"\nACHIEVED ROTATED {method} TEST ACCURACY: {test2_accuracy}")
-    print(f"\nACHIEVED NON-ROTATED {method} TEST ACCURACY: {test1_accuracy}")
-    print(f"\nACHIEVED ROTATED {method} TEST ACCURACY: {test2_accuracy}")
+    logging.info(f"\nACHIEVED NON-SHIFTED {method} TEST ACCURACY: {test1_accuracy}")
+    logging.info(f"\nACHIEVED SHIFTED {method} TEST ACCURACY: {test2_accuracy}")
+    print(f"\nACHIEVED NON-SHIFTED {method} TEST ACCURACY: {test1_accuracy}")
+    print(f"\nACHIEVED SHIFTED {method} TEST ACCURACY: {test2_accuracy}")
 
     return state, test1_accuracy, test2_accuracy
