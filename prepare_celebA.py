@@ -28,6 +28,8 @@ import jax
 import jax.numpy as jnp
 import warnings
 import logging
+import train_utils as tu
+
 
 logging.basicConfig(level=logging.INFO, filename=".\logfile.txt", filemode="w+",
                     format="%(asctime)-15s %(levelname)-8s %(message)s")
@@ -37,18 +39,18 @@ class CNN_celeba(nn.Module):
     @nn.compact
     def __call__(self, x):
         x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
-        x = nn.relu(x)
-        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
-        x = nn.relu(x)
-        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
-        x = nn.relu(x)
-        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
-        x = nn.relu(x)
-        x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
+        x = nn.activation.leaky_relu(x)
+        x = nn.Conv(features=32, kernel_size=(5, 5), strides=2)(x)
+        x = nn.activation.leaky_relu(x)
+        x = nn.Conv(features=64, kernel_size=(5, 5), strides=2)(x)
+        x = nn.activation.leaky_relu(x)
+        #x = nn.Conv(features=128, kernel_size=(5, 5), strides=2)(x)
+        #x = nn.activation.leaky_relu(x)
+        x = nn.avg_pool(x, window_shape=(3, 3), strides=(3, 3))
         x = x.reshape((x.shape[0], -1))
         # extract the learned representation and return it separately. This is needed for CVR regularization
         r = x
-        x = nn.Dense(features=10)(x)
+        x = nn.Dense(features=2)(x)
         return x, r
 
 
@@ -296,7 +298,9 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
     # number of singlett data points
     n_s = n_vali - c_vali
 
-    x_vali = jnp.zeros((n_vali + c_vali, resize_0, resize_1, 3))
+    # TODO: find out why you here need to change order of resize_0 and resize_1, apparanetly resize_create_CelebA saves
+    # the images with shape (resize_1, resize_0)
+    x_vali = jnp.zeros((n_vali + c_vali, resize_1, resize_0, 3))
     x_vali = x_vali.at[:n_s, :, :, :].set(x_vali_sing)
 
     for j in range(c_vali):
@@ -327,12 +331,11 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
     y_test2 = y_test2.astype(jnp.int32)
     
     ################################### persist everything ###################################
-    dir_path = base_path + fr"\augmented_CelebA_seed{seed}_label{label_idx}"
+    dir_path = base_path + fr"\augmented_CelebA_resized{resize_0}x{resize_1}_seed{seed}_label{label_idx}"
     if not os.path.exists(dir_path):
         os.makedirs(dir_path + r"\train")
         os.makedirs(dir_path + r"\vali")
-        os.makedirs(dir_path + r"\test1")
-        os.makedirs(dir_path + r"\test2")
+        os.makedirs(dir_path + r"\test")
 
     jnp.save(dir_path + r"\train\x_train_sing.npy", x_train_sing)
     jnp.save(dir_path + r"\train\y_train_sing.npy", y_train_sing)
@@ -343,11 +346,11 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
     jnp.save(dir_path + r"\vali\x_vali.npy", x_vali)
     jnp.save(dir_path + r"\vali\y_vali.npy", y_vali)
 
-    jnp.save(dir_path + r"\test1\x_test1.npy", x_test1)
-    jnp.save(dir_path + r"\test1\y_test1.npy", y_test1)
+    jnp.save(dir_path + r"\test\x_test1.npy", x_test1)
+    jnp.save(dir_path + r"\test\y_test1.npy", y_test1)
 
-    jnp.save(dir_path + r"\test2\x_test2.npy", x_test2)
-    jnp.save(dir_path + r"\test2\y_test2.npy", y_test2)
+    jnp.save(dir_path + r"\test\x_test2.npy", x_test2)
+    jnp.save(dir_path + r"\test\y_test2.npy", y_test2)
 
     return None
 
@@ -492,11 +495,11 @@ def create_CelebA(base_path, n_train, n_vali, n_test, f_1, label_idx, resize_0, 
     jnp.save(dir_path + r"\vali\x_vali.npy", x_vali)
     jnp.save(dir_path + r"\vali\y_vali.npy", y_vali)
 
-    jnp.save(dir_path + r"\test1\x_test1.npy", x_test1)
-    jnp.save(dir_path + r"\test1\y_test1.npy", y_test1)
+    jnp.save(dir_path + r"\test\x_test1.npy", x_test1)
+    jnp.save(dir_path + r"\test\y_test1.npy", y_test1)
 
-    jnp.save(dir_path + r"\test2\x_test2.npy", x_test2)
-    jnp.save(dir_path + r"\test2\y_test2.npy", y_test2)
+    jnp.save(dir_path + r"\test\x_test2.npy", x_test2)
+    jnp.save(dir_path + r"\test\y_test2.npy", y_test2)
 
     return None
 
@@ -541,7 +544,8 @@ def load_celeba(augmented, base_path, resize_0, resize_1, seed, label_idx):
 
     x_test1 = jnp.load(dir_path + "\\test\\x_test1.npy")
     x_test2 = jnp.load(dir_path + "\\test\\x_test2.npy")
-    y_test = jnp.load(dir_path + "\\test\\y_test.npy")
+    y_test1 = jnp.load(dir_path + "\\test\\y_test1.npy")
+    y_test2 = jnp.load(dir_path + "\\test\\y_test2.npy")
 
     if augmented:
         train_data = {"sing_features": x_train_sing, "sing_labels": y_train_sing, "dub_orig_features": x_train_orig,
@@ -552,8 +556,8 @@ def load_celeba(augmented, base_path, resize_0, resize_1, seed, label_idx):
 
     vali_data = {"features": x_vali, "labels": y_vali}
 
-    test1_data = {"features": x_test1, "labels": y_test}
-    test2_data = {"features": x_test2, "labels": y_test}
+    test1_data = {"features": x_test1, "labels": y_test1}
+    test2_data = {"features": x_test2, "labels": y_test2}
 
     return train_data, vali_data, test1_data, test2_data
 
@@ -567,20 +571,96 @@ if __name__ == "__main__":
     resize_1 = 64
     seed = 5297
     base_path = r"C:\Users\Marius\Desktop\DAS\Cond_Var_Regularization"
-    n_train = 2000
-    n_test = 200
-    n_vali = 200
-    f_1 = 0.25
+    #n_train = 20000
+    n_train = 1000
+    #n_vali = 10000
+    n_vali = 1000
+    #n_test = 10000
+    n_test = 1000
+    f_1 = 0.26
     f_aug = 0.5
     # attributes and their index for me to use and the count statistics in the dataset:
     # Eyeglasses: (15, 13193), mustache: (22, 8417), Wearing_Hat: (35, 9818)   
     aug_label = 15 #eyeglasses 
     non_aug_label = 22 # mustaches
     CelebA_path = base_path + r"\CelebA"
+    
+
+    ################## DEFINE FREE PARAMETES  ##################
+    num_epochs = 15
+    learning_rate = 0.01
+
+    # n is the number of original data points in training set. Needs to be an integer multiple of 100 
+    # for below parameter choices to be optimal: batches are sorted such that always the last 2*d datapoints
+    # are augmented groups, meaning d consecutive pairs with first the original data point, 
+    # then the augmented/rotated datapoint. The below choice of batch size, d and number of batches ensures that
+    # the final batch is not partially filled
+
+    # number of data points to be augmented by rotation, equal to number of dublette groups in the final data set
+    #c = 2600
+    c = 130
+    #batch_size = 226
+    batch_size = 113
+    # d is the number of dublette (Y, ID) groups per batch
+    #d = 26
+    d = 13
+    #num_batches = 100
+    num_batches  = 10
+
+    # regularization parameters on which to perform model selection
+    ls = [0.01, 1]
+
     #resize_degrade_CelebA(CelebA_path, resize_0, resize_1, seed)
-
     create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, aug_label, resize_0, resize_1, seed)
-    create_CelebA(base_path, n_train, n_vali, n_test, f_1, non_aug_label, resize_0, resize_1, seed)
 
+    # need to reduce vali and test size as there are not enough mustaches in the dataset
+    #n_vali = 5000
+    #n_test = 3461
+    #create_CelebA(base_path, n_train, n_vali, n_test, f_1, non_aug_label, resize_0, resize_1, seed)
+
+    train_data, vali_data, test1_data, test2_data = load_celeba(True, base_path, resize_0, resize_1, seed, aug_label)
+    #train_data_, vali_data_, test1_data_, test2_data_ = load_celeba(False, base_path, resize_0, resize_1, seed, non_aug_label)
+    
+    ################## TRAIN MODELS ##################
+    cnn = CNN_celeba()
+    
+    # run unregularized case as model selection with only l=0 to choose from, method chosen does not matter for l=0
+    key = jax.random.key(seed)
+    key, subkey = jax.random.split(key)
+    state, t1_accuracy, t2_accuracy = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
+                                                      learning_rate, batch_size, num_batches, 130, d, [0], subkey,
+                                                      size_0=64, size_1=48, ccs=3, method="CVP", tf_seed=0)
+
+    # select regularization parameter for conditional variance of prediction
+    key = jax.random.key(seed)
+    key, subkey = jax.random.split(key)
+    state_cvp, t1_accuracy_cvp, t2_accuracy_cvp = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
+                                                                  learning_rate, batch_size, num_batches, 130, d, ls, key, 
+                                                                  size_0=64, size_1=48, ccs=3, method="CVP", tf_seed=0)
+    
+    # select regularization parameter for conditional variance of representation
+    key = jax.random.key(seed)
+    key, subkey = jax.random.split(key)
+    state_cvr, t1_accuracy_cvr, t2_accuracy_cvr = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
+                                                                  learning_rate, batch_size, num_batches, 130, d, ls, key, 
+                                                                  size_0=64, size_1=48, ccs=3, method="CVR", tf_seed=0)
+    
+    logging.info("\n###########################################################################\n")
+    logging.info(f"NON-REGULARIZED NON-ROTATED TEST ACCURACY = {t1_accuracy}")
+    logging.info(f"CVP NON-ROTATED TEST ACCURACY = {t1_accuracy_cvp}")
+    logging.info(f"CVR NON-ROTATED TEST ACCURACY = {t1_accuracy_cvr}")
+
+    logging.info(f"\nNON-REGULARIZED ROTATED TEST ACCURACY = {t2_accuracy}")
+    logging.info(f"CVP ROTATED TEST ACCURACY = {t2_accuracy_cvp}")
+    logging.info(f"CVR ROTATED TEST ACCURACY = {t2_accuracy_cvr}")
+    
+    print("\n###########################################################################\n")
+    print(f"NON-REGULARIZED NON-ROTATED TEST ACCURACY = {t1_accuracy}")
+    print(f"CVP NON-ROTATED TEST ACCURACY = {t1_accuracy_cvp}")
+    print(f"CVR NON-ROTATED TEST ACCURACY = {t1_accuracy_cvr}")
+
+    print(f"\nNON-REGULARIZED ROTATED TEST ACCURACY = {t2_accuracy}")
+    print(f"CVP ROTATED TEST ACCURACY = {t2_accuracy_cvp}")
+    print(f"CVR ROTATED TEST ACCURACY = {t2_accuracy_cvr}")
 
  

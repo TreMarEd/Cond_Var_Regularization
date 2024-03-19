@@ -8,8 +8,6 @@ See README for details.
 ................
 
 TODO:
-- pack functions usable for both MNIST and CelebA into a utils directory: these include:
-    - Metrics, TrainState, create_train_state, train_step, compute_metrics, get_grouped_batch, train_cnn, model_selection
 [- write readme (after entire code including celeb is finished)]
 [- new requirements.txt]
 """
@@ -245,7 +243,6 @@ def load_aug_mnist(c, seed, n):
     return train_data, vali_data, test1_data, test2_data
 
 
-
 if __name__ == "__main__":
 
     ################## DEFINE FREE PARAMETES  ##################
@@ -283,17 +280,17 @@ if __name__ == "__main__":
     # run unregularized case as model selection with only l=0 to choose from, method chosen does not matter for l=0
     state, t1_accuracy, t2_accuracy = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
                                                       learning_rate, batch_size, num_batches, c, d, [0], key,
-                                                      size_0=28, size_1=28, method="CVP", tf_seed=0)
+                                                      size_0=28, size_1=28, ccs=1, method="CVP", tf_seed=0)
 
     # select regularization parameter for conditional variance of prediction
     state_cvp, t1_accuracy_cvp, t2_accuracy_cvp = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
                                                                   learning_rate, batch_size, num_batches, c, d, ls, key, 
-                                                                  size_0=28, size_1=28, method="CVP", tf_seed=0)
+                                                                  size_0=28, size_1=28, ccs=1, method="CVP", tf_seed=0)
     
     # select regularization parameter for conditional variance of representation
     state_cvr, t1_accuracy_cvr, t2_accuracy_cvr = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data,num_epochs, 
                                                                   learning_rate, batch_size, num_batches, c, d, ls, key, 
-                                                                  size_0=28, size_1=28, method="CVR", tf_seed=0)
+                                                                  size_0=28, size_1=28, ccs=1, method="CVR", tf_seed=0)
     
     logging.info("\n###########################################################################\n")
 

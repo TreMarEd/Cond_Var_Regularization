@@ -12,6 +12,7 @@ import optax
 import matplotlib.pyplot as plt
 import numpy as np
 from functools import partial
+from jax.tree_util import Partial
 import logging
 
 
@@ -23,7 +24,7 @@ logging.basicConfig(level=logging.INFO, filename=".\logfile.txt", filemode="w+",
 class Metrics(metrics.Collection):
     '''Metrics class is the attribute of the training state that saves the accuracy and the loss'''
     accuracy: metrics.Accuracy
-    loss: metrics.Average.from_output('loss')
+    loss: metrics.Average.from_output('loss') # type: ignore
 
 
 class TrainState(train_state.TrainState):
@@ -31,16 +32,16 @@ class TrainState(train_state.TrainState):
     metrics: Metrics
 
 
-def create_train_state(module, rng, size_0, size_1, learning_rate):
+def create_train_state(module, rng, size_0, size_1, ccs, learning_rate):
     """Creates an initial `TrainState`."""
-    params = module.init(rng, jnp.ones([1, size_0, size_1, 1]))['params']
+    params = module.init(rng, jnp.ones([1, size_0, size_1, ccs]))['params']
 
     tx = optax.adam(learning_rate)
 
     return TrainState.create(apply_fn=module.apply, params=params, tx=tx, metrics=Metrics.empty())
 
 
-@partial(jax.jit, static_argnums=(3, 4, 5))
+@Partial(jax.jit, static_argnums=(3, 4, 5))
 def train_step(state, images, labels, d, l, method="CVP"):
     '''
     Maps a training state, training features, training labels to the new training state after a single gradient descent step
@@ -107,7 +108,7 @@ def train_step(state, images, labels, d, l, method="CVP"):
     return state
 
 
-@partial(jax.jit, static_argnums=(3, 4, 5))
+@Partial(jax.jit, static_argnums=(3, 4, 5))
 def compute_metrics(state, images, labels, d, l, method="CVP"):
     '''
     Given a training state and some features, labels, returns a new training state whose metrics have been updated according to the
@@ -169,8 +170,8 @@ def compute_metrics(state, images, labels, d, l, method="CVP"):
     return state
 
 
-@partial(jax.jit, static_argnums=(6, 7, 8))
-def get_grouped_batches(x, y, x_orig, y_orig, x_aug, key, batch_size, num_batches, d):
+#@Partial(jax.jit, static_argnums=(5, 6, 7, 9, 10, 11))
+def get_grouped_batches(x, y, x_orig, y_orig, x_aug, size_0, size_1, ccs, key, batch_size, num_batches, d):
     '''
     Given singlett features/labels, original features/labels from dubletts and augmented features from dublettes, return
     the batches required to run one epoch of conditional variance regularization (CVR).
@@ -220,10 +221,11 @@ def get_grouped_batches(x, y, x_orig, y_orig, x_aug, key, batch_size, num_batche
     y_orig_perm = jnp.take(y_orig, idxs, axis=0)
 
     # initialize batch output
-    x_batches = jnp.zeros((num_batches, batch_size, 28, 28, 1))
+    x_batches = jnp.zeros((num_batches, batch_size, size_0, size_1, ccs))
     y_batches = jnp.zeros((num_batches, batch_size))
 
     for i in range(num_batches):
+        print(f"CURRENT BATCH {i}")
         # fill the first n_t entries of the batch with data points from singlett
         x_batches = x_batches.at[i, :n_t, :, :, :].set(x_perm[i*n_t:(i+1)*n_t, :, :, :])
         y_batches = y_batches.at[i, :n_t].set(y_perm[i*n_t:(i+1)*n_t])
@@ -237,11 +239,12 @@ def get_grouped_batches(x, y, x_orig, y_orig, x_aug, key, batch_size, num_batche
             y_batches = y_batches.at[i, n_t + 2*j].set(y_orig_perm[d*i + j])
             y_batches = y_batches.at[i, n_t +(2*j)+1].set(y_orig_perm[d*i + j])
 
+    
     return x_batches, y_batches.astype(jnp.int32)
 
 
 def train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, learning_rate, batch_size, num_batches, c_vali, d, l, 
-              key, size_0, size_1, method="CVP", tf_seed=0):
+              key, size_0, size_1, ccs, method="CVP", tf_seed=0):
     '''
     Given data, all relevant learning parameters, and a regularization method, returns a list containing the training state of 
     each epoch and the epoch that achieved the best validation score.
@@ -277,7 +280,7 @@ def train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, le
 
     tf.random.set_seed(tf_seed)
     key, subkey = jax.random.split(key)
-    state = create_train_state(cnn, subkey, size_0, size_1, learning_rate)
+    state = create_train_state(cnn, subkey, size_0, size_1, ccs, learning_rate)
 
     metrics_history = {'train_loss': [], 'train_accuracy': [], 'vali_loss': [],
                        'vali_accuracy': [], 'test1_loss': [], 'test1_accuracy': [],
@@ -287,10 +290,10 @@ def train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, le
     for i in range(num_epochs):
 
         key, subkey = jax.random.split(key)
+
         x_batches, y_batches = get_grouped_batches(train_data["sing_features"], train_data["sing_labels"],
                                                    train_data["dub_orig_features"], train_data["dub_labels"],
-                                                   train_data["dub_aug_features"], subkey, batch_size, num_batches, d)
-
+                                                   train_data["dub_aug_features"], size_0, size_1, ccs, subkey, batch_size, num_batches, d)
         for j in range(num_batches):
             train_images = x_batches[j]
             train_labels = y_batches[j]
@@ -372,7 +375,7 @@ def train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, le
 
 
 def model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, learning_rate, batch_size, num_batches,
-                    c_vali, d, ls, key, size_0, size_1, method="CVP", tf_seed=0):
+                    c_vali, d, ls, key, size_0, size_1, ccs, method="CVP", tf_seed=0):
     '''
     Given data, all relevant learning parameters, a regularization method and a list of regularization parameters to be validated
     returns the final training state of the model that achieves the best validation score.
@@ -416,7 +419,7 @@ def model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epoc
         key, subkey = jax.random.split(key)
         states, epoch, accuracy = train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
                                             learning_rate, batch_size, num_batches, c_vali, d, l, subkey, 
-                                            size_0, size_1, method, tf_seed)
+                                            size_0, size_1, ccs, method, tf_seed)
 
         if accuracy > best_accuracy:
             best_l = l
