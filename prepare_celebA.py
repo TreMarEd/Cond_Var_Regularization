@@ -40,15 +40,15 @@ class CNN_celeba(nn.Module):
     def __call__(self, x):
         x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
         x = nn.activation.leaky_relu(x)
+        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
+        x = nn.activation.leaky_relu(x)
         x = nn.Conv(features=32, kernel_size=(5, 5), strides=2)(x)
         x = nn.activation.leaky_relu(x)
-        x = nn.Conv(features=64, kernel_size=(5, 5), strides=2)(x)
-        x = nn.activation.leaky_relu(x)
-        x = nn.Conv(features=128, kernel_size=(5, 5), strides=2)(x)
+        x = nn.Conv(features=32, kernel_size=(5, 5), strides=2)(x)
         x = nn.activation.leaky_relu(x)
         #x = nn.Conv(features=128, kernel_size=(5, 5), strides=2)(x)
         #x = nn.activation.leaky_relu(x)
-        #x = nn.avg_pool(x, window_shape=(4, 4), strides=(4, 4))
+        x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 1)) # shape 2x2x32
         x = x.reshape((x.shape[0], -1))
         # extract the learned representation and return it separately. This is needed for CVR regularization
         r = x
@@ -589,8 +589,8 @@ if __name__ == "__main__":
     
 
     ################## DEFINE FREE PARAMETES  ##################
-    num_epochs = 30
-    learning_rate = 0.005
+    num_epochs = 20
+    learning_rate = 0.004
 
     # n is the number of original data points in training set. Needs to be an integer multiple of 100 
     # for below parameter choices to be optimal: batches are sorted such that always the last 2*d datapoints
@@ -610,10 +610,10 @@ if __name__ == "__main__":
     #num_batches  = 10
 
     # regularization parameters on which to perform model selection
-    ls = [0.0001, 0.1]
+    ls = [0.001, 0.1, 1]
 
     #resize_degrade_CelebA(CelebA_path, resize_0, resize_1, seed)
-    create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, aug_label, resize_0, resize_1, seed)
+    #create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, aug_label, resize_0, resize_1, seed)
 
     # need to reduce vali and test size as there are not enough mustaches in the dataset
     #n_vali = 5000
@@ -629,25 +629,25 @@ if __name__ == "__main__":
     # run unregularized case as model selection with only l=0 to choose from, method chosen does not matter for l=0
     key = jax.random.key(seed)
     key, subkey = jax.random.split(key)
-    """
+    
     state, t1_accuracy, t2_accuracy = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
                                                       learning_rate, batch_size, num_batches, 100, d, [0], subkey,
                                                       size_0=64, size_1=48, ccs=3, method="CVP", tf_seed=0)
-
+    
     # select regularization parameter for conditional variance of prediction
     key = jax.random.key(seed)
     key, subkey = jax.random.split(key)
     
     
     state_cvp, t1_accuracy_cvp, t2_accuracy_cvp = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
-                                                                  learning_rate, batch_size, num_batches, 1300, d, ls, key, 
+                                                                  learning_rate, batch_size, num_batches, 100, d, ls, subkey, 
                                                                   size_0=64, size_1=48, ccs=3, method="CVP", tf_seed=0)
     
     # select regularization parameter for conditional variance of representation
     key = jax.random.key(seed)
     key, subkey = jax.random.split(key)
     state_cvr, t1_accuracy_cvr, t2_accuracy_cvr = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
-                                                                  learning_rate, batch_size, num_batches, 130, d, ls, key, 
+                                                                  learning_rate, batch_size, num_batches, 100, d, ls, subkey, 
                                                                   size_0=64, size_1=48, ccs=3, method="CVR", tf_seed=0)
     
     logging.info("\n###########################################################################\n")
@@ -667,5 +667,5 @@ if __name__ == "__main__":
     print(f"\nNON-REGULARIZED SHIFTED TEST ACCURACY = {t2_accuracy}")
     print(f"CVP SHIFTED TEST ACCURACY = {t2_accuracy_cvp}")
     print(f"CVR SHIFTED TEST ACCURACY = {t2_accuracy_cvr}")
-    """
+    
  

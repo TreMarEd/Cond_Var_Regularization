@@ -225,7 +225,6 @@ def get_grouped_batches(x, y, x_orig, y_orig, x_aug, size_0, size_1, ccs, key, b
     y_batches = jnp.zeros((num_batches, batch_size))
 
     for i in range(num_batches):
-        print(f"CURRENT BATCH {i}")
         # fill the first n_t entries of the batch with data points from singlett
         x_batches = x_batches.at[i, :n_t, :, :, :].set(x_perm[i*n_t:(i+1)*n_t, :, :, :])
         y_batches = y_batches.at[i, :n_t].set(y_perm[i*n_t:(i+1)*n_t])
