@@ -370,6 +370,8 @@ def train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, le
     ax1.grid(True)
     ax2.grid(True)
 
+    ax2.set_ylim(0.5, 1)
+
     lr_str = str(learning_rate).replace(".", ",")
     l_str = str(l).replace(".", ",")
     plt.savefig(f".\learning_curves\learning_curve_{method}_lr{lr_str}_l{l_str}_e{num_epochs}_bs{batch_size}.png")

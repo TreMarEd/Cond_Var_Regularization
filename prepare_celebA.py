@@ -38,17 +38,17 @@ class CNN_celeba(nn.Module):
     """A simple CNN model."""
     @nn.compact
     def __call__(self, x):
-        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
+        x = nn.Conv(features=8, kernel_size=(4, 3), strides=2)(x)
         x = nn.activation.leaky_relu(x)
-        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
+        x = nn.Conv(features=8, kernel_size=(4, 3), strides=2)(x)
         x = nn.activation.leaky_relu(x)
-        x = nn.Conv(features=32, kernel_size=(5, 5), strides=2)(x)
+        x = nn.Conv(features=8, kernel_size=(4, 3), strides=2)(x)
         x = nn.activation.leaky_relu(x)
-        x = nn.Conv(features=32, kernel_size=(5, 5), strides=2)(x)
+        x = nn.Conv(features=8, kernel_size=(4, 3), strides=2)(x)
         x = nn.activation.leaky_relu(x)
         #x = nn.Conv(features=128, kernel_size=(5, 5), strides=2)(x)
         #x = nn.activation.leaky_relu(x)
-        x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 1)) # shape 2x2x32
+        #x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 1)) # shape 2x2x32
         x = x.reshape((x.shape[0], -1))
         # extract the learned representation and return it separately. This is needed for CVR regularization
         r = x
@@ -589,7 +589,7 @@ if __name__ == "__main__":
     
 
     ################## DEFINE FREE PARAMETES  ##################
-    num_epochs = 20
+    num_epochs = 29
     learning_rate = 0.004
 
     # n is the number of original data points in training set. Needs to be an integer multiple of 100 
@@ -601,16 +601,16 @@ if __name__ == "__main__":
     # number of data points to be augmented by rotation, equal to number of dublette groups in the final data set
     #c = 2600
     #c = 130
-    batch_size = 204
+    batch_size = 102
     #batch_size = 113
     # d is the number of dublette (Y, ID) groups per batch
-    d = 4
+    d = 2
     #d = 13
-    num_batches = 100
+    num_batches = 200
     #num_batches  = 10
 
     # regularization parameters on which to perform model selection
-    ls = [0.001, 0.1, 1]
+    ls = [10, 30]
 
     #resize_degrade_CelebA(CelebA_path, resize_0, resize_1, seed)
     #create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, aug_label, resize_0, resize_1, seed)
