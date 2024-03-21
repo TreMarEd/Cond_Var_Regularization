@@ -589,7 +589,7 @@ if __name__ == "__main__":
     
 
     ################## DEFINE FREE PARAMETES  ##################
-    num_epochs = 29
+    num_epochs = 28
     learning_rate = 0.004
 
     # n is the number of original data points in training set. Needs to be an integer multiple of 100 
@@ -610,7 +610,7 @@ if __name__ == "__main__":
     #num_batches  = 10
 
     # regularization parameters on which to perform model selection
-    ls = [10, 30]
+    ls = [100]
 
     #resize_degrade_CelebA(CelebA_path, resize_0, resize_1, seed)
     #create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, aug_label, resize_0, resize_1, seed)
