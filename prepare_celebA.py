@@ -589,8 +589,8 @@ if __name__ == "__main__":
     
 
     ################## DEFINE FREE PARAMETES  ##################
-    num_epochs = 30
-    learning_rate = 0.004
+    num_epochs = 35
+    learning_rate = 0.005
 
     # n is the number of original data points in training set. Needs to be an integer multiple of 100 
     # for below parameter choices to be optimal: batches are sorted such that always the last 2*d datapoints
