@@ -53,7 +53,6 @@ class CNN_celeba(nn.Module):
         return x, r
 
 
-
 def resize_degrade_CelebA(CelebA_path, resize_0, resize_1, seed):
     '''
     Given the original CelebA dataset and an RNG seed saves a resized version of the original dataset 
@@ -353,154 +352,6 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
 
     return None
 
-# TODO: do I need this at all?
-def create_CelebA(base_path, n_train, n_vali, n_test, f_1, label_idx, resize_0, resize_1, seed):
-    '''
-    Provided paths to datasets of degraded and non-degraded CelebA images, creates and persists the non-augmentd Celeb A 
-    dataset for the conditional variance regularization experiment. 
-        - train, vali, test1: contain a total of n datapoints of which f_1 * n have Y=1. All Y=0 datapoints are non-degraded
-          and all Y=1 datapoints are degraded
-        - test2: same as above, but All Y=1 datapoints are non-degraded and all Y=0 datapoints are degraded
-
-    The data is persisted in the following way:
-        - x_<train/vali>: features of non-augmented datapoints
-        - y_<train_vali>: labels of non-augmented datapoints
-
-    Parameters:
-        base_path (string): path to a directory containing the CelebA directories created by the function resize_degrade_CelebA
-        n_train (int): the number of datapoints in the train set
-        n_vali (int): the number of datapoints in the vali set
-        n_test (int): the number of datapoints in the test1 and test2 sets
-        f_1 (float): n*f_1 is the number of datapoints with Y=1
-        label_idx (int): the index of the relevant label to be used from the original CelebA dataset, f.e. 15 => eyeglasses
-        seed (int): seed that was used during the call to resize_degrade_CelebA to create the prepared CelebA datasets
-
-    Returns:
-        None
-    '''
-    
-    print(f"########################### CREATING NON-AUGMENTED CELEBA FOR LABEL {label_idx} ###########################")
-
-    n_tot = 202599
-    assert n_train + n_vali + 2*n_test < n_tot, "train, test and vali set have bigger combined size than Celeb A"
-    if (n_train + n_vali + 2*n_test) * f_1 < 0.04 * n_tot:
-        warnings.warn("It is likely that you requested more Y=1 data than is contained in Celeb A. In this \
-                      case a downstream error in the sample_arrays function will be raised")
-
-    key = jax.random.key(seed)
-    CelebA = datasets.CelebA(root=base_path + f".\CelebA_resized{resize_0}x{resize_1}_seed{seed}", split='all', target_type='attr',
-                             transform=ToTensor(), download=True)
-    CelebA_d = datasets.CelebA(root=base_path + f".\CelebA_resized{resize_0}x{resize_1}_degraded_seed{seed}", split='all', target_type='attr',
-                               transform=ToTensor(), download=True)
-    
-    # separate features according to whether Y=0 or Y=1
-    # d for degraded
-    x_0_d = []
-    x_1_d = []
-    #nd for non-degraded
-    x_0_nd = []
-    x_1_nd = []
-
-    for i in range(n_tot):
-        print(i)
-        
-        y = int(CelebA[i][1][label_idx])
-
-        img_d = CelebA_d[i][0].numpy()
-        img_nd = CelebA[i][0].numpy()
-        # surprisingly, the magick command for image degradation seems to delete some colour channels if not needed anymore
-        # after degradation, which results in heterogeneous shape. This is rarely the case (less than 1 in 3000) and I
-        # just skip these datapoints here
-        if np.shape(img_d)[0] == 3 and np.shape(img_nd)[0] == 3:
-            
-            if y == 1:
-                x_1_d.append(img_d)
-                x_1_nd.append(img_nd)
-
-            else:
-                x_0_d.append(img_d)
-                x_0_nd.append(img_nd)
-
-    x_0_d = jnp.asarray(x_0_d)
-    x_0_nd = jnp.asarray(x_0_nd)
-    x_1_d = jnp.asarray(x_1_d)
-    x_1_nd = jnp.asarray(x_1_nd)
-
-    # color channel dim needs to be the last one to conform with training functions already written
-    x_0_d = jnp.moveaxis(x_0_d, 1, -1)
-    x_0_nd = jnp.moveaxis(x_0_nd, 1, -1)
-    x_1_d = jnp.moveaxis(x_1_d, 1, -1)
-    x_1_nd = jnp.moveaxis(x_1_nd, 1, -1)
-
-    # number of original Y=1 datapoints in final dataset
-    m_train = int(f_1 * n_train)
-    m_vali  = int(f_1 * n_vali)
-    m_test = int(f_1 * n_test)
-
-    ################################### create train data ###################################
-    key, subkey = jax.random.split(key)
-    [x_0_d_sample, x_0_nd_sample], [x_0_d, x_0_nd] = sample_arrays([x_0_d, x_0_nd], n_train - m_train, subkey)
-    
-    key, subkey = jax.random.split(key)
-    [x_1_d_sample, x_1_nd_sample], [x_1_d, x_1_nd] = sample_arrays([x_1_d, x_1_nd], m_train, subkey)
-    
-    x_train = jnp.vstack((x_0_nd_sample, x_1_d_sample))
-    y_train = jnp.hstack((jnp.zeros((n_train - m_train)), jnp.ones((m_train,))))
-    y_train = y_train.astype(jnp.int32)
-    
-    ################################### create vali data ###################################
-    key, subkey = jax.random.split(key)
-    [x_0_d_sample, x_0_nd_sample], [x_0_d, x_0_nd] = sample_arrays([x_0_d, x_0_nd], n_vali - m_vali, subkey)
-    
-    key, subkey = jax.random.split(key)
-    [x_1_d_sample, x_1_nd_sample], [x_1_d, x_1_nd] = sample_arrays([x_1_d, x_1_nd], m_vali, subkey)
-    
-    x_vali = jnp.vstack((x_0_nd_sample, x_1_d_sample))
-    y_vali = jnp.hstack((jnp.zeros((n_vali - m_vali)), jnp.ones((m_vali,))))
-    y_vali = y_vali.astype(jnp.int32)
-
-    ################################### create test1 and test2 data ###################################
-    key, subkey = jax.random.split(key)
-    [x_0_d_sample, x_0_nd_sample], [x_0_d, x_0_nd] = sample_arrays([x_0_d, x_0_nd], n_test - m_test, subkey)
-    
-    key, subkey = jax.random.split(key)
-    [x_1_d_sample, x_1_nd_sample], [x_1_d, x_1_nd] = sample_arrays([x_1_d, x_1_nd], m_test, subkey)
-    
-    x_test1 = jnp.vstack((x_0_nd_sample, x_1_d_sample))
-    y_test1 = jnp.hstack((jnp.zeros((n_test - m_test)), jnp.ones((m_test,))))
-    y_test1 = y_test1.astype(jnp.int32)
-
-    key, subkey = jax.random.split(key)
-    [x_0_d_sample, x_0_nd_sample], [x_0_d, x_0_nd] = sample_arrays([x_0_d, x_0_nd], n_test - m_test, subkey)
-    
-    key, subkey = jax.random.split(key)
-    [x_1_d_sample, x_1_nd_sample], [x_1_d, x_1_nd] = sample_arrays([x_1_d, x_1_nd], m_test, subkey)
-    
-    x_test2 = jnp.vstack((x_0_d_sample, x_1_nd_sample))
-    y_test2 = jnp.hstack((jnp.zeros((n_test - m_test)), jnp.ones((m_test,))))
-    y_test2 = y_test2.astype(jnp.int32)
-    
-    ################################### persist everything ###################################
-    dir_path = base_path + fr"\nonaugmented_CelebA_resized{resize_0}x{resize_1}_seed{seed}_label{label_idx}"
-    if not os.path.exists(dir_path):
-        os.makedirs(dir_path + r"\train")
-        os.makedirs(dir_path + r"\vali")
-        os.makedirs(dir_path + r"\test")
-
-    jnp.save(dir_path + r"\train\x_train.npy", x_train)
-    jnp.save(dir_path + r"\train\y_train.npy", y_train)
-
-    jnp.save(dir_path + r"\vali\x_vali.npy", x_vali)
-    jnp.save(dir_path + r"\vali\y_vali.npy", y_vali)
-
-    jnp.save(dir_path + r"\test\x_test1.npy", x_test1)
-    jnp.save(dir_path + r"\test\y_test1.npy", y_test1)
-
-    jnp.save(dir_path + r"\test\x_test2.npy", x_test2)
-    jnp.save(dir_path + r"\test\y_test2.npy", y_test2)
-
-    return None
-
 
 def load_celeba(base_path, resize_0, resize_1, seed, label_idx, augmented):
     '''
@@ -564,11 +415,12 @@ if __name__ == "__main__":
 
     # if not already done, download original dataset using
     # datasets.CelebA(root=f".\CelebA", split='all', target_type='attr', transform=ToTensor(), download=True)
-
+    base_path = r"C:\Users\Marius\Desktop\DAS\Cond_Var_Regularization"
+    CelebA_path = base_path + r"\CelebA"
+    ######################################## DEFINE FREE PARAMETES  ########################################
     resize_0 = 48
     resize_1 = 64
     seed = 5297
-    base_path = r"C:\Users\Marius\Desktop\DAS\Cond_Var_Regularization"
     n_train = 20000
     n_vali = 5000
     n_test = 5000
@@ -579,9 +431,6 @@ if __name__ == "__main__":
     f_aug = 0.08
     # attributes and their index for me to use and the count statistics in the dataset:
     # Eyeglasses: (15, 13193), mustache: (22, 8417), Wearing_Hat: (35, 9818)   
-    CelebA_path = base_path + r"\CelebA"
-    
-    ################## DEFINE FREE PARAMETES  ##################
     num_epochs = 35
     learning_rate = 0.005
     batch_size = 102
@@ -596,47 +445,71 @@ if __name__ == "__main__":
 
     cnn = CNN_celeba()
 
-    """
-    ############################### TRAIN EYEGLASS MODELS ###############################
+    ######################################## TRAIN EYEGLASS MODELS ########################################
     # 15 is the index of eyeglasses
-    create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 15, resize_0, resize_1, seed)
+    #create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 15, resize_0, resize_1, seed)
     train_data, vali_data, test1_data, test2_data = load_celeba(base_path, resize_0, resize_1, seed, 15, augmented=True)
     
     # run unregularized case as model selection with only l=0 to choose from, method chosen does not matter for l=0
     key = jax.random.key(seed)
     key, subkey = jax.random.split(key)
-    
-    state, t1_accuracy, t2_accuracy = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
+    state_e0, t1_accuracy_e0, t2_accuracy_e0 = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
                                                       learning_rate, batch_size, num_batches, 100, d, [0], subkey,
                                                       size_0=64, size_1=48, ccs=3, method="CVR", tf_seed=0)
-    
-    # select regularization parameter for conditional variance of prediction
-    key = jax.random.key(seed)
-    key, subkey = jax.random.split(key)
     
     # select regularization parameter for conditional variance of representation
     key = jax.random.key(seed)
     key, subkey = jax.random.split(key)
-    state_cvr, t1_accuracy_cvr, t2_accuracy_cvr = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
+    state_ecvr, t1_accuracy_ecvr, t2_accuracy_ecvr = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
                                                                   learning_rate, batch_size, num_batches, 100, d, ls, subkey, 
                                                                   size_0=64, size_1=48, ccs=3, method="CVR", tf_seed=0)
     
-    print("\n###########################################################################\n")
-    print(f"NON-REGULARIZED NON-SHIFTED TEST ACCURACY = {t1_accuracy}")
-    print(f"CVR NON-SHIFTED TEST ACCURACY = {t1_accuracy_cvr}")
-    print(f"\nNON-REGULARIZED SHIFTED TEST ACCURACY = {t2_accuracy}")
-    print(f"CVR SHIFTED TEST ACCURACY = {t2_accuracy_cvr}")
-    """
-    ############################### TRAIN MUSTACHE MODELS ###############################
-
+    ######################################## TRAIN MUSTACHE MODELS ########################################
     # 22 is the index of mustaches
-    create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 22, resize_0, resize_1, seed)
+    #create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 22, resize_0, resize_1, seed)
     train_data, vali_data, test1_data, test2_data = load_celeba(base_path, resize_0, resize_1, seed, 22, augmented=True)
     
     # run unregularized case as model selection with only l=0 to choose from, method chosen does not matter for l=0
     key = jax.random.key(seed)
     key, subkey = jax.random.split(key)
-    
-    state, t1_accuracy, t2_accuracy = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
-                                                      learning_rate, batch_size, num_batches, 100, d, [0], subkey,
+    state_m0, t1_accuracy_m0, t2_accuracy_m0 = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
+                                                      learning_rate, batch_size, num_batches, 80, d, [0], subkey,
                                                       size_0=64, size_1=48, ccs=3, method="CVR", tf_seed=0)
+    
+    def get_repr(x):
+        logits, repr = state_ecvr.apply_fn({'params': state_ecvr.params}, x)
+        return repr
+
+
+    class CNN_trf(nn.Module):
+        """A simple CNN model."""
+        @nn.compact
+        def __call__(self, x):
+
+            r = get_repr(x)
+            x = nn.Dense(features=2)(r)
+            return x, r 
+    
+
+    cnn_trf = CNN_trf()
+
+    key = jax.random.key(seed)
+    key, subkey = jax.random.split(key)
+    state_mtrf, t1_accuracy_mtrf, t2_accuracy_mtrf = tu.model_selection(cnn_trf, train_data, vali_data, test1_data, 
+                                                                        test2_data, num_epochs, learning_rate, batch_size, 
+                                                                        num_batches, 80, d, [0], subkey, size_0=64, size_1=48, 
+                                                                        ccs=3, method="CVR", tf_seed=0)
+
+    ######################################## SUMMARIZE THE RESULTS ########################################
+
+    print("\n###########################################################################\n")
+    print(f"NON-REGULARIZED NON-SHIFTED EYEGLASS TEST ACCURACY = {t1_accuracy_e0}")
+    print(f"CVR NON-SHIFTED EYEGLASS TEST ACCURACY = {t1_accuracy_ecvr}")
+    print(f"\nNON-REGULARIZED EYEGLASS SHIFTED TEST ACCURACY = {t2_accuracy_e0}")
+    print(f"CVR SHIFTED EYEGLASS TEST ACCURACY = {t2_accuracy_ecvr}")
+
+    print("\n###########################################################################\n")
+    print(f"NON-REGULARIZED NON-SHIFTED MUSTACHE TEST ACCURACY = {t1_accuracy_m0}")
+    print(f"CVR TRANSFERRED NON-SHIFTED MUSTACHE TEST ACCURACY = {t1_accuracy_mtrf}")
+    print(f"\nNON-REGULARIZED MUSTACHE SHIFTED TEST ACCURACY = {t2_accuracy_m0}")
+    print(f"CVR TRANSFERRED SHIFTED MUSTACHE TEST ACCURACY = {t2_accuracy_mtrf}")

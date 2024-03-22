@@ -11,7 +11,6 @@ from flax import struct
 import optax
 import matplotlib.pyplot as plt
 import numpy as np
-from functools import partial
 from jax.tree_util import Partial
 import logging
 
@@ -370,7 +369,7 @@ def train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, le
     ax1.grid(True)
     ax2.grid(True)
 
-    ax2.set_ylim(0.3, 1)
+    ax2.set_ylim(0.4, 1)
 
     lr_str = str(learning_rate).replace(".", ",")
     l_str = str(l).replace(".", ",")
