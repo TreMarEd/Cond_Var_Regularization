@@ -35,7 +35,6 @@ logging.basicConfig(level=logging.INFO, filename=".\logfile.txt", filemode="w+",
                     format="%(asctime)-15s %(levelname)-8s %(message)s")
 
 class CNN_celeba(nn.Module):
-    """A simple CNN model."""
     @nn.compact
     def __call__(self, x):
         x = nn.Conv(features=10, kernel_size=(4, 3), strides=2)(x)
@@ -444,7 +443,7 @@ if __name__ == "__main__":
     #resize_degrade_CelebA(CelebA_path, resize_0, resize_1, seed)
 
     cnn = CNN_celeba()
-
+    
     ######################################## TRAIN EYEGLASS MODELS ########################################
     # 15 is the index of eyeglasses
     #create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 15, resize_0, resize_1, seed)
@@ -464,6 +463,21 @@ if __name__ == "__main__":
                                                                   learning_rate, batch_size, num_batches, 100, d, ls, subkey, 
                                                                   size_0=64, size_1=48, ccs=3, method="CVR", tf_seed=0)
     
+    def get_repr(x):
+        logits, repr = state_ecvr.apply_fn({'params': state_ecvr.params}, x)
+        return repr
+    
+    class CNN_trf(nn.Module):
+        @nn.compact
+        def __call__(self, x):
+
+            r = get_repr(x)
+            x = nn.Dense(features=2)(r)
+            return x, r 
+    
+
+
+    
     ######################################## TRAIN MUSTACHE MODELS ########################################
     # 22 is the index of mustaches
     #create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 22, resize_0, resize_1, seed)
@@ -476,23 +490,14 @@ if __name__ == "__main__":
                                                       learning_rate, batch_size, num_batches, 80, d, [0], subkey,
                                                       size_0=64, size_1=48, ccs=3, method="CVR", tf_seed=0)
     
-    def get_repr(x):
-        logits, repr = state_ecvr.apply_fn({'params': state_ecvr.params}, x)
-        return repr
-
-
-    class CNN_trf(nn.Module):
-        """A simple CNN model."""
-        @nn.compact
-        def __call__(self, x):
-
-            r = get_repr(x)
-            x = nn.Dense(features=2)(r)
-            return x, r 
-    
+    # select regularization parameter for conditional variance of representation
+    key = jax.random.key(seed)
+    key, subkey = jax.random.split(key)
+    state_mcvr, t1_accuracy_mcvr, t2_accuracy_mcvr = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
+                                                                  learning_rate, batch_size, num_batches, 80, d, ls, subkey, 
+                                                                  size_0=64, size_1=48, ccs=3, method="CVR", tf_seed=0)
 
     cnn_trf = CNN_trf()
-
     key = jax.random.key(seed)
     key, subkey = jax.random.split(key)
     state_mtrf, t1_accuracy_mtrf, t2_accuracy_mtrf = tu.model_selection(cnn_trf, train_data, vali_data, test1_data, 
@@ -500,16 +505,54 @@ if __name__ == "__main__":
                                                                         num_batches, 80, d, [0], subkey, size_0=64, size_1=48, 
                                                                         ccs=3, method="CVR", tf_seed=0)
 
+    ######################################## TRAIN NECKTIE MODELS ########################################
+    # 38 is the index of hats
+    create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 38, resize_0, resize_1, seed)
+    train_data, vali_data, test1_data, test2_data = load_celeba(base_path, resize_0, resize_1, seed, 38, augmented=True)
+    
+    # run unregularized case as model selection with only l=0 to choose from, method chosen does not matter for l=0
+    key = jax.random.key(seed)
+    key, subkey = jax.random.split(key)
+    state_h0, t1_accuracy_h0, t2_accuracy_h0 = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
+                                                      learning_rate, batch_size, num_batches, 80, d, [0], subkey,
+                                                      size_0=64, size_1=48, ccs=3, method="CVR", tf_seed=0)
+    
+    # select regularization parameter for conditional variance of representation
+    key = jax.random.key(seed)
+    key, subkey = jax.random.split(key)
+    state_hcvr, t1_accuracy_hcvr, t2_accuracy_hcvr = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
+                                                                  learning_rate, batch_size, num_batches, 80, d, ls, subkey, 
+                                                                  size_0=64, size_1=48, ccs=3, method="CVR", tf_seed=0)
+
+
+    cnn_trf = CNN_trf()
+    key = jax.random.key(seed)
+    key, subkey = jax.random.split(key)
+    state_htrf, t1_accuracy_htrf, t2_accuracy_htrf = tu.model_selection(cnn_trf, train_data, vali_data, test1_data, 
+                                                                        test2_data, num_epochs, learning_rate, batch_size, 
+                                                                        num_batches, 80, d, [0], subkey, size_0=64, size_1=48, 
+                                                                        ccs=3, method="CVR", tf_seed=0)
+    
     ######################################## SUMMARIZE THE RESULTS ########################################
 
-    print("\n###########################################################################\n")
+    print("\n################### EYEGLASSES ################### \n")
     print(f"NON-REGULARIZED NON-SHIFTED EYEGLASS TEST ACCURACY = {t1_accuracy_e0}")
     print(f"CVR NON-SHIFTED EYEGLASS TEST ACCURACY = {t1_accuracy_ecvr}")
     print(f"\nNON-REGULARIZED EYEGLASS SHIFTED TEST ACCURACY = {t2_accuracy_e0}")
     print(f"CVR SHIFTED EYEGLASS TEST ACCURACY = {t2_accuracy_ecvr}")
 
-    print("\n###########################################################################\n")
+    print("\n################### MUSTACHES ################### \n")
     print(f"NON-REGULARIZED NON-SHIFTED MUSTACHE TEST ACCURACY = {t1_accuracy_m0}")
+    print(f"CVR NON-SHIFTED MUSTACHE TEST ACCURACY = {t1_accuracy_mcvr}")
     print(f"CVR TRANSFERRED NON-SHIFTED MUSTACHE TEST ACCURACY = {t1_accuracy_mtrf}")
     print(f"\nNON-REGULARIZED MUSTACHE SHIFTED TEST ACCURACY = {t2_accuracy_m0}")
+    print(f"CVR SHIFTED MUSTACHE TEST ACCURACY = {t2_accuracy_mcvr}")
     print(f"CVR TRANSFERRED SHIFTED MUSTACHE TEST ACCURACY = {t2_accuracy_mtrf}")
+
+    print("\n################### NECKTIE ################### \n")
+    print(f"NON-REGULARIZED NON-SHIFTED NECKTIE TEST ACCURACY = {t1_accuracy_h0}")
+    print(f"CVR NON-SHIFTED NECKTIE TEST ACCURACY = {t1_accuracy_hcvr}")
+    print(f"CVR TRANSFERRED NON-SHIFTED NECKTIE TEST ACCURACY = {t1_accuracy_htrf}")
+    print(f"\nNON-REGULARIZED NECKTIE SHIFTED TEST ACCURACY = {t2_accuracy_h0}")
+    print(f"CVR SHIFTED NECKTIE TEST ACCURACY = {t2_accuracy_hcvr}")
+    print(f"CVR TRANSFERRED SHIFTED NECKTIE TEST ACCURACY = {t2_accuracy_htrf}")
