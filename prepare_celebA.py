@@ -37,13 +37,13 @@ logging.basicConfig(level=logging.INFO, filename=".\logfile.txt", filemode="w+",
 class CNN_celeba(nn.Module):
     @nn.compact
     def __call__(self, x):
-        x = nn.Conv(features=10, kernel_size=(4, 3), strides=2)(x)
+        x = nn.Conv(features=12, kernel_size=(4, 3), strides=2)(x)
         x = nn.activation.leaky_relu(x)
-        x = nn.Conv(features=10, kernel_size=(4, 3), strides=2)(x)
+        x = nn.Conv(features=12, kernel_size=(4, 3), strides=2)(x)
         x = nn.activation.leaky_relu(x)
-        x = nn.Conv(features=10, kernel_size=(4, 3), strides=2)(x)
+        x = nn.Conv(features=12, kernel_size=(4, 3), strides=2)(x)
         x = nn.activation.leaky_relu(x)
-        x = nn.Conv(features=10, kernel_size=(4, 3), strides=3)(x)
+        x = nn.Conv(features=12, kernel_size=(4, 3), strides=3)(x)
         x = nn.activation.leaky_relu(x)
         x = x.reshape((x.shape[0], -1))
         # extract the learned representation and return it separately. This is needed for CVR regularization
@@ -476,8 +476,6 @@ if __name__ == "__main__":
             return x, r 
     
 
-
-    
     ######################################## TRAIN MUSTACHE MODELS ########################################
     # 22 is the index of mustaches
     #create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 22, resize_0, resize_1, seed)
@@ -507,7 +505,7 @@ if __name__ == "__main__":
 
     ######################################## TRAIN NECKTIE MODELS ########################################
     # 38 is the index of hats
-    create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 38, resize_0, resize_1, seed)
+    #create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 38, resize_0, resize_1, seed)
     train_data, vali_data, test1_data, test2_data = load_celeba(base_path, resize_0, resize_1, seed, 38, augmented=True)
     
     # run unregularized case as model selection with only l=0 to choose from, method chosen does not matter for l=0
