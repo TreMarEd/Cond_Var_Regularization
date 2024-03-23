@@ -156,7 +156,7 @@ def sample_arrays(arrays, n, key, axis=0):
     return sample_arrays, rest_arrays
 
 
-def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, label_idx, resize_0, resize_1, seed):
+def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, label_idx, resize_0, resize_1, seed, flip_y=False):
     '''
     Provided paths to datasets of degraded and non-degraded CelebA images, creates and persists the augmentd Celeb A 
     dataset for the conditional variance regularization experiment. The created dataset contains a test and validation 
@@ -226,13 +226,22 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
         # just skip these datapoints here
         if np.shape(img_d)[0] == 3 and np.shape(img_nd)[0] == 3:
             
-            if y == 1:
-                x_1_d.append(img_d)
-                x_1_nd.append(img_nd)
+            if not flip_y:
+                if y == 1:
+                    x_1_d.append(img_d)
+                    x_1_nd.append(img_nd)
 
+                else:
+                    x_0_d.append(img_d)
+                    x_0_nd.append(img_nd)
             else:
-                x_0_d.append(img_d)
-                x_0_nd.append(img_nd)
+                if y == 0:
+                    x_1_d.append(img_d)
+                    x_1_nd.append(img_nd)
+
+                else:
+                    x_0_d.append(img_d)
+                    x_0_nd.append(img_nd)
 
     x_0_d = jnp.asarray(x_0_d)
     x_0_nd = jnp.asarray(x_0_nd)
@@ -438,33 +447,33 @@ if __name__ == "__main__":
     num_batches = 200
 
     # regularization parameters on which to perform model selection
-    ls = [400]
+    ls = [300]
 
     #resize_degrade_CelebA(CelebA_path, resize_0, resize_1, seed)
 
     cnn = CNN_celeba()
     
-    ######################################## TRAIN EYEGLASS MODELS ########################################
-    # 15 is the index of eyeglasses
-    #create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 15, resize_0, resize_1, seed)
-    train_data, vali_data, test1_data, test2_data = load_celeba(base_path, resize_0, resize_1, seed, 15, augmented=True)
+    ######################################## TRAIN BEARD MODELS ########################################
+    # 24 is the index of beards
+    create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 24, resize_0, resize_1, seed, flip_y=True)
+    train_data, vali_data, test1_data, test2_data = load_celeba(base_path, resize_0, resize_1, seed, 24, augmented=True)
     
     # run unregularized case as model selection with only l=0 to choose from, method chosen does not matter for l=0
     key = jax.random.key(seed)
     key, subkey = jax.random.split(key)
-    state_e0, t1_accuracy_e0, t2_accuracy_e0 = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
+    state_b0, t1_accuracy_b0, t2_accuracy_b0 = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
                                                       learning_rate, batch_size, num_batches, 100, d, [0], subkey,
                                                       size_0=64, size_1=48, ccs=3, method="CVR", tf_seed=0)
     
     # select regularization parameter for conditional variance of representation
     key = jax.random.key(seed)
     key, subkey = jax.random.split(key)
-    state_ecvr, t1_accuracy_ecvr, t2_accuracy_ecvr = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
+    state_bcvr, t1_accuracy_bcvr, t2_accuracy_bcvr = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
                                                                   learning_rate, batch_size, num_batches, 100, d, ls, subkey, 
                                                                   size_0=64, size_1=48, ccs=3, method="CVR", tf_seed=0)
     
     def get_repr(x):
-        logits, repr = state_ecvr.apply_fn({'params': state_ecvr.params}, x)
+        logits, repr = state_bcvr.apply_fn({'params': state_bcvr.params}, x)
         return repr
     
     class CNN_trf(nn.Module):
@@ -498,27 +507,28 @@ if __name__ == "__main__":
     cnn_trf = CNN_trf()
     key = jax.random.key(seed)
     key, subkey = jax.random.split(key)
+    # num epochs reduced to 5 as model is much smaller
     state_mtrf, t1_accuracy_mtrf, t2_accuracy_mtrf = tu.model_selection(cnn_trf, train_data, vali_data, test1_data, 
-                                                                        test2_data, num_epochs, learning_rate, batch_size, 
+                                                                        test2_data, 5, learning_rate, batch_size, 
                                                                         num_batches, 80, d, [0], subkey, size_0=64, size_1=48, 
                                                                         ccs=3, method="CVR", tf_seed=0)
 
-    ######################################## TRAIN NECKTIE MODELS ########################################
-    # 38 is the index of hats
-    #create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 38, resize_0, resize_1, seed)
-    train_data, vali_data, test1_data, test2_data = load_celeba(base_path, resize_0, resize_1, seed, 38, augmented=True)
+    ######################################## TRAIN GOATEE MODELS ########################################
+    # 16 is the index of goatees
+    create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 16, resize_0, resize_1, seed)
+    train_data, vali_data, test1_data, test2_data = load_celeba(base_path, resize_0, resize_1, seed, 16, augmented=True)
     
     # run unregularized case as model selection with only l=0 to choose from, method chosen does not matter for l=0
     key = jax.random.key(seed)
     key, subkey = jax.random.split(key)
-    state_h0, t1_accuracy_h0, t2_accuracy_h0 = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
+    state_g0, t1_accuracy_g0, t2_accuracy_g0 = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
                                                       learning_rate, batch_size, num_batches, 80, d, [0], subkey,
                                                       size_0=64, size_1=48, ccs=3, method="CVR", tf_seed=0)
     
     # select regularization parameter for conditional variance of representation
     key = jax.random.key(seed)
     key, subkey = jax.random.split(key)
-    state_hcvr, t1_accuracy_hcvr, t2_accuracy_hcvr = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
+    state_gcvr, t1_accuracy_gcvr, t2_accuracy_gcvr = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
                                                                   learning_rate, batch_size, num_batches, 80, d, ls, subkey, 
                                                                   size_0=64, size_1=48, ccs=3, method="CVR", tf_seed=0)
 
@@ -526,18 +536,48 @@ if __name__ == "__main__":
     cnn_trf = CNN_trf()
     key = jax.random.key(seed)
     key, subkey = jax.random.split(key)
-    state_htrf, t1_accuracy_htrf, t2_accuracy_htrf = tu.model_selection(cnn_trf, train_data, vali_data, test1_data, 
-                                                                        test2_data, num_epochs, learning_rate, batch_size, 
+    # num epochs reduced to 5 as model is much smaller
+    state_gtrf, t1_accuracy_gtrf, t2_accuracy_gtrf = tu.model_selection(cnn_trf, train_data, vali_data, test1_data, 
+                                                                        test2_data, 5, learning_rate, batch_size, 
                                                                         num_batches, 80, d, [0], subkey, size_0=64, size_1=48, 
                                                                         ccs=3, method="CVR", tf_seed=0)
     
+    ######################################## TRAIN SIDEBURNS MODELS ########################################
+    # 30 is the index of sideburns
+    create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 30, resize_0, resize_1, seed)
+    train_data, vali_data, test1_data, test2_data = load_celeba(base_path, resize_0, resize_1, seed, 30, augmented=True)
+    
+    # run unregularized case as model selection with only l=0 to choose from, method chosen does not matter for l=0
+    key = jax.random.key(seed)
+    key, subkey = jax.random.split(key)
+    state_s0, t1_accuracy_s0, t2_accuracy_s0 = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
+                                                      learning_rate, batch_size, num_batches, 80, d, [0], subkey,
+                                                      size_0=64, size_1=48, ccs=3, method="CVR", tf_seed=0)
+    
+    # select regularization parameter for conditional variance of representation
+    key = jax.random.key(seed)
+    key, subkey = jax.random.split(key)
+    state_scvr, t1_accuracy_scvr, t2_accuracy_scvr = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
+                                                                  learning_rate, batch_size, num_batches, 80, d, ls, subkey, 
+                                                                  size_0=64, size_1=48, ccs=3, method="CVR", tf_seed=0)
+
+    cnn_trf = CNN_trf()
+    key = jax.random.key(seed)
+    key, subkey = jax.random.split(key)
+    # num epochs reduced to 5 as model is much smaller
+    state_strf, t1_accuracy_strf, t2_accuracy_strf = tu.model_selection(cnn_trf, train_data, vali_data, test1_data, 
+                                                                        test2_data, 5, learning_rate, batch_size, 
+                                                                        num_batches, 80, d, [0], subkey, size_0=64, size_1=48, 
+                                                                        ccs=3, method="CVR", tf_seed=0)
+    
+    
     ######################################## SUMMARIZE THE RESULTS ########################################
 
-    print("\n################### EYEGLASSES ################### \n")
-    print(f"NON-REGULARIZED NON-SHIFTED EYEGLASS TEST ACCURACY = {t1_accuracy_e0}")
-    print(f"CVR NON-SHIFTED EYEGLASS TEST ACCURACY = {t1_accuracy_ecvr}")
-    print(f"\nNON-REGULARIZED EYEGLASS SHIFTED TEST ACCURACY = {t2_accuracy_e0}")
-    print(f"CVR SHIFTED EYEGLASS TEST ACCURACY = {t2_accuracy_ecvr}")
+    print("\n################### BEARDS ################### \n")
+    print(f"NON-REGULARIZED NON-SHIFTED EYEGLASS TEST ACCURACY = {t1_accuracy_b0}")
+    print(f"CVR NON-SHIFTED EYEGLASS TEST ACCURACY = {t1_accuracy_bcvr}")
+    print(f"\nNON-REGULARIZED EYEGLASS SHIFTED TEST ACCURACY = {t2_accuracy_b0}")
+    print(f"CVR SHIFTED EYEGLASS TEST ACCURACY = {t2_accuracy_bcvr}")
 
     print("\n################### MUSTACHES ################### \n")
     print(f"NON-REGULARIZED NON-SHIFTED MUSTACHE TEST ACCURACY = {t1_accuracy_m0}")
@@ -547,10 +587,18 @@ if __name__ == "__main__":
     print(f"CVR SHIFTED MUSTACHE TEST ACCURACY = {t2_accuracy_mcvr}")
     print(f"CVR TRANSFERRED SHIFTED MUSTACHE TEST ACCURACY = {t2_accuracy_mtrf}")
 
-    print("\n################### NECKTIE ################### \n")
-    print(f"NON-REGULARIZED NON-SHIFTED NECKTIE TEST ACCURACY = {t1_accuracy_h0}")
-    print(f"CVR NON-SHIFTED NECKTIE TEST ACCURACY = {t1_accuracy_hcvr}")
-    print(f"CVR TRANSFERRED NON-SHIFTED NECKTIE TEST ACCURACY = {t1_accuracy_htrf}")
-    print(f"\nNON-REGULARIZED NECKTIE SHIFTED TEST ACCURACY = {t2_accuracy_h0}")
-    print(f"CVR SHIFTED NECKTIE TEST ACCURACY = {t2_accuracy_hcvr}")
-    print(f"CVR TRANSFERRED SHIFTED NECKTIE TEST ACCURACY = {t2_accuracy_htrf}")
+    print("\n################### GOATEE ################### \n")
+    print(f"NON-REGULARIZED NON-SHIFTED GOATEE TEST ACCURACY = {t1_accuracy_g0}")
+    print(f"CVR NON-SHIFTED GOATEE TEST ACCURACY = {t1_accuracy_gcvr}")
+    print(f"CVR TRANSFERRED NON-SHIFTED GOATEE TEST ACCURACY = {t1_accuracy_gtrf}")
+    print(f"\nNON-REGULARIZED GOATEE SHIFTED TEST ACCURACY = {t2_accuracy_g0}")
+    print(f"CVR SHIFTED GOATEE TEST ACCURACY = {t2_accuracy_gcvr}")
+    print(f"CVR TRANSFERRED SHIFTED GOATEE TEST ACCURACY = {t2_accuracy_gtrf}")
+
+    print("\n################### SIDEBURNS ################### \n")
+    print(f"NON-REGULARIZED NON-SHIFTED SIDEBURNS TEST ACCURACY = {t1_accuracy_s0}")
+    print(f"CVR NON-SHIFTED SIDEBURNS TEST ACCURACY = {t1_accuracy_scvr}")
+    print(f"CVR TRANSFERRED NON-SHIFTED SIDEBURNS TEST ACCURACY = {t1_accuracy_strf}")
+    print(f"\nNON-REGULARIZED SIDEBURNS SHIFTED TEST ACCURACY = {t2_accuracy_s0}")
+    print(f"CVR SHIFTED SIDEBURNS TEST ACCURACY = {t2_accuracy_scvr}")
+    print(f"CVR TRANSFERRED SHIFTED SIDEBURNS TEST ACCURACY = {t2_accuracy_strf}")
