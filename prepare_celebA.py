@@ -455,7 +455,7 @@ if __name__ == "__main__":
     
     ######################################## TRAIN BEARD MODELS ########################################
     # 24 is the index of beards
-    create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 24, resize_0, resize_1, seed, flip_y=True)
+    #create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 24, resize_0, resize_1, seed, flip_y=True)
     train_data, vali_data, test1_data, test2_data = load_celeba(base_path, resize_0, resize_1, seed, 24, augmented=True)
     
     # run unregularized case as model selection with only l=0 to choose from, method chosen does not matter for l=0
@@ -515,7 +515,7 @@ if __name__ == "__main__":
 
     ######################################## TRAIN GOATEE MODELS ########################################
     # 16 is the index of goatees
-    create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 16, resize_0, resize_1, seed)
+    #create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 16, resize_0, resize_1, seed)
     train_data, vali_data, test1_data, test2_data = load_celeba(base_path, resize_0, resize_1, seed, 16, augmented=True)
     
     # run unregularized case as model selection with only l=0 to choose from, method chosen does not matter for l=0
@@ -544,7 +544,7 @@ if __name__ == "__main__":
     
     ######################################## TRAIN SIDEBURNS MODELS ########################################
     # 30 is the index of sideburns
-    create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 30, resize_0, resize_1, seed)
+    #create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 30, resize_0, resize_1, seed)
     train_data, vali_data, test1_data, test2_data = load_celeba(base_path, resize_0, resize_1, seed, 30, augmented=True)
     
     # run unregularized case as model selection with only l=0 to choose from, method chosen does not matter for l=0
@@ -570,14 +570,42 @@ if __name__ == "__main__":
                                                                         num_batches, 80, d, [0], subkey, size_0=64, size_1=48, 
                                                                         ccs=3, method="CVR", tf_seed=0)
     
+    ######################################## TRAIN EYEGLASS MODELS ########################################
+    # 30 is the index of sideburns
+    #create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 15, resize_0, resize_1, seed)
+    train_data, vali_data, test1_data, test2_data = load_celeba(base_path, resize_0, resize_1, seed, 15, augmented=True)
+    
+    # run unregularized case as model selection with only l=0 to choose from, method chosen does not matter for l=0
+    key = jax.random.key(seed)
+    key, subkey = jax.random.split(key)
+    state_e0, t1_accuracy_e0, t2_accuracy_e0 = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
+                                                      learning_rate, batch_size, num_batches, 80, d, [0], subkey,
+                                                      size_0=64, size_1=48, ccs=3, method="CVR", tf_seed=0)
+    
+    # select regularization parameter for conditional variance of representation
+    key = jax.random.key(seed)
+    key, subkey = jax.random.split(key)
+    state_ecvr, t1_accuracy_ecvr, t2_accuracy_ecvr = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
+                                                                  learning_rate, batch_size, num_batches, 80, d, ls, subkey, 
+                                                                  size_0=64, size_1=48, ccs=3, method="CVR", tf_seed=0)
+
+    cnn_trf = CNN_trf()
+    key = jax.random.key(seed)
+    key, subkey = jax.random.split(key)
+    # num epochs reduced to 5 as model is much smaller
+    state_etrf, t1_accuracy_etrf, t2_accuracy_etrf = tu.model_selection(cnn_trf, train_data, vali_data, test1_data, 
+                                                                        test2_data, 5, learning_rate, batch_size, 
+                                                                        num_batches, 80, d, [0], subkey, size_0=64, size_1=48, 
+                                                                        ccs=3, method="CVR", tf_seed=0)
+    
     
     ######################################## SUMMARIZE THE RESULTS ########################################
 
     print("\n################### BEARDS ################### \n")
-    print(f"NON-REGULARIZED NON-SHIFTED EYEGLASS TEST ACCURACY = {t1_accuracy_b0}")
-    print(f"CVR NON-SHIFTED EYEGLASS TEST ACCURACY = {t1_accuracy_bcvr}")
-    print(f"\nNON-REGULARIZED EYEGLASS SHIFTED TEST ACCURACY = {t2_accuracy_b0}")
-    print(f"CVR SHIFTED EYEGLASS TEST ACCURACY = {t2_accuracy_bcvr}")
+    print(f"NON-REGULARIZED NON-SHIFTED BEARDS TEST ACCURACY = {t1_accuracy_b0}")
+    print(f"CVR NON-SHIFTED BEARDS TEST ACCURACY = {t1_accuracy_bcvr}")
+    print(f"\nNON-REGULARIZED BEARDS SHIFTED TEST ACCURACY = {t2_accuracy_b0}")
+    print(f"CVR SHIFTED BEARDS TEST ACCURACY = {t2_accuracy_bcvr}")
 
     print("\n################### MUSTACHES ################### \n")
     print(f"NON-REGULARIZED NON-SHIFTED MUSTACHE TEST ACCURACY = {t1_accuracy_m0}")
@@ -602,3 +630,17 @@ if __name__ == "__main__":
     print(f"\nNON-REGULARIZED SIDEBURNS SHIFTED TEST ACCURACY = {t2_accuracy_s0}")
     print(f"CVR SHIFTED SIDEBURNS TEST ACCURACY = {t2_accuracy_scvr}")
     print(f"CVR TRANSFERRED SHIFTED SIDEBURNS TEST ACCURACY = {t2_accuracy_strf}")
+
+
+    print("\n################### EYEGLASS ################### \n")
+    print(f"NON-REGULARIZED NON-SHIFTED EYEGLASS TEST ACCURACY = {t1_accuracy_e0}")
+    print(f"CVR NON-SHIFTED EYEGLASS TEST ACCURACY = {t1_accuracy_ecvr}")
+    print(f"CVR TRANSFERRED NON-SHIFTED EYEGLASS TEST ACCURACY = {t1_accuracy_etrf}")
+    print(f"\nNON-REGULARIZED EYEGLASS SHIFTED TEST ACCURACY = {t2_accuracy_e0}")
+    print(f"CVR SHIFTED EYEGLASS TEST ACCURACY = {t2_accuracy_ecvr}")
+    print(f"CVR TRANSFERRED SHIFTED EYEGLASS TEST ACCURACY = {t2_accuracy_etrf}")
+
+
+    print("hoi")
+    # logits, repr = state.apply_fn({'params': state.params}, images)
+
