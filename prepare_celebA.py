@@ -429,7 +429,7 @@ if __name__ == "__main__":
     batch_size = 102
     d = 2 #d is the number of dublette (Y, ID) groups per batch
     num_batches = 200
-    l = 500
+    l = 1000
 
     ######################################## LOAD ORIGINAL CELEBA DATASET  ########################################
     base_path = r"C:\Users\Marius\Desktop\DAS\Cond_Var_Regularization"
