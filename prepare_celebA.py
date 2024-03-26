@@ -429,7 +429,7 @@ if __name__ == "__main__":
     batch_size = 102
     d = 2 #d is the number of dublette (Y, ID) groups per batch
     num_batches = 200
-    l = 400
+    l = 500
 
     ######################################## LOAD ORIGINAL CELEBA DATASET  ########################################
     base_path = r"C:\Users\Marius\Desktop\DAS\Cond_Var_Regularization"
@@ -447,7 +447,7 @@ if __name__ == "__main__":
     # initialize results
     results = {}
     # relevant indices of labels in the CelebA dataset
-    labels = {"EYEGLASSES": 15, "GOATEE": 16, "MUSTACHES": 22, "SIDEBURNS": 30}
+    labels = {"GOATEE": 16, "MUSTACHES": 22, "SIDEBURNS": 30}
 
     for label in labels.keys():
         results[label] = {"NO-REG": {"test1": [], "test2": []}, "CVR": {"test1": [], "test2": []}, 
