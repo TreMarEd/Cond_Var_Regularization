@@ -357,7 +357,7 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
     return None
 
 
-def load_celeba(base_path, resize_0, resize_1, seed, label_idx, augmented):
+def load_celeba(base_path, resize_0, resize_1, seed, label_idx, augmented=True):
     '''
     Parameters:
         augmented (bool): boolean stating whether to load an augmented or non-augmented dataset
@@ -417,8 +417,8 @@ def load_celeba(base_path, resize_0, resize_1, seed, label_idx, augmented):
 
 if __name__ == "__main__":
     ######################################## DEFINE FREE PARAMETES  ########################################
-    resize_0 = 48 # celebA images will be resized to this size
-    resize_1 = 64
+    # celebA images will be resized to this size
+    img_shape = (48, 64, 3)
     n_train = 20000
     n_vali = 5000
     n_test = 5000
@@ -440,9 +440,9 @@ if __name__ == "__main__":
 
     ######################################## CREATE RESIZED DEGRADED DATA  ########################################
     seed = 5297
-    dir_path = CelebA_path + fr"_resized{resize_0}x{resize_1}_degraded_seed{seed}"
+    dir_path = CelebA_path + fr"_resized{img_shape[0]}x{img_shape[1]}_degraded_seed{seed}"
     if not os.path.exists(dir_path):
-        resize_degrade_CelebA(CelebA_path, resize_0, resize_1, seed)
+        resize_degrade_CelebA(CelebA_path, img_shape[0], img_shape[1], seed)
 
     # initialize results
     results = {}
@@ -458,23 +458,24 @@ if __name__ == "__main__":
     for seed in seeds:
         ######################################## TRAIN BEARD MODELS ########################################
         # 24 is the index of beards
-        dir_path = base_path + fr"\augmented_CelebA_resized{resize_0}x{resize_1}_seed{seed}_label24"
+        dir_path = base_path + fr"\augmented_CelebA_resized{img_shape[0]}x{img_shape[1]}_seed{seed}_label24"
         if not os.path.exists(dir_path):
-            create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 24, resize_0, resize_1, seed, flip_y=True)
+            create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 24, img_shape[0], img_shape[1], seed, 
+                                    flip_y=True)
         
-        train_data, vali_data, test1_data, test2_data = load_celeba(base_path, resize_0, resize_1, seed, 24, augmented=True)
+        train_data, vali_data, test1_data, test2_data = load_celeba(base_path, img_shape[0], img_shape[1], seed, 24)
         
         cnn = CNN_celeba()
         key = jax.random.key(seed)
         key, subkey = jax.random.split(key) 
-        state_b0, vali_acc_b0, t1_acc_b0, t2_acc_b0 = tu.train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
-                                                                learning_rate, batch_size, num_batches, 100, d, 0, subkey, 
-                                                                size_0=64, size_1=48, ccs=3, tf_seed=0)
+        state_b0, vali_acc_b0, t1_acc_b0, t2_acc_b0 = tu.train_cnn(cnn, train_data, vali_data, test1_data, test2_data, 
+                                                                   num_epochs, learning_rate, batch_size, num_batches, 
+                                                                   100, d, 0, subkey, img_shape)
         key = jax.random.key(seed)
         key, subkey = jax.random.split(key)
         state_bcvr, vali_acc_bcvr, t1_acc_bcvr, t2_acc_bcvr = tu.train_cnn(cnn, train_data, vali_data, test1_data, test2_data, 
-                                                                        num_epochs, learning_rate, batch_size, num_batches, 
-                                                                        100, d, l, subkey, size_0=64, size_1=48, ccs=3, tf_seed=0)
+                                                                           num_epochs, learning_rate, batch_size, num_batches, 
+                                                                           100, d, l, subkey, img_shape)
         
         def get_repr(x):
             """maps an input image to the learned representation of the CVR beard model"""
@@ -500,18 +501,17 @@ if __name__ == "__main__":
             print(f"\n#################### RUNNING {label} ####################")
 
             # create data if it doesn't exist, load it
-            dir_path = base_path + fr"\augmented_CelebA_resized{resize_0}x{resize_1}_seed{seed}_label{idx}"
+            dir_path = base_path + fr"\augmented_CelebA_resized{img_shape[0]}x{img_shape[1]}_seed{seed}_label{idx}"
             if not os.path.exists(dir_path):
-                create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, idx, resize_0, resize_1, seed)
+                create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, idx, img_shape[0], img_shape[1], seed)
 
-            train_data, vali_data, t1_data, t2_data = load_celeba(base_path, resize_0, resize_1, seed, idx, augmented=True)
+            train_data, vali_data, t1_data, t2_data = load_celeba(base_path, img_shape[0], img_shape[1], seed, idx)
             
             # no regularization run
             key = jax.random.key(seed)
             key, subkey = jax.random.split(key)
             state, vali_acc, t1_acc, t2_acc = tu.train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
-                                                           learning_rate, batch_size, num_batches, 80, d, 0, subkey, size_0=64, 
-                                                           size_1=48, ccs=3,  tf_seed=0)   
+                                                           learning_rate, batch_size, num_batches, 80, d, 0, subkey, img_shape)   
             results[label]["NO-REG"]["test1"].append(t1_acc)
             results[label]["NO-REG"]["test2"].append(t2_acc)
 
@@ -519,8 +519,7 @@ if __name__ == "__main__":
             key = jax.random.key(seed)
             key, subkey = jax.random.split(key)
             state, vali_acc, t1_acc, t2_acc = tu.train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
-                                                           learning_rate, batch_size, num_batches, 80, d, l, subkey, size_0=64, 
-                                                           size_1=48, ccs=3,  tf_seed=0)
+                                                           learning_rate, batch_size, num_batches, 80, d, l, subkey, img_shape)
             results[label]["CVR"]["test1"].append(t1_acc)
             results[label]["CVR"]["test2"].append(t2_acc)
 
@@ -529,8 +528,7 @@ if __name__ == "__main__":
             key, subkey = jax.random.split(key)
             # num epochs reduced to 5 as model is much smaller        
             state, vali_acc, t1_acc, t2_acc = tu.train_cnn(cnn_trf, train_data, vali_data, test1_data, test2_data, 5, 
-                                                           learning_rate, batch_size, num_batches, 80, d, 0, subkey, size_0=64, 
-                                                           size_1=48, ccs=3,  tf_seed=0)
+                                                           learning_rate, batch_size, num_batches, 80, d, 0, subkey, img_shape)
             results[label]["TRANSFER"]["test1"].append(t1_acc)
             results[label]["TRANSFER"]["test2"].append(t2_acc)
      

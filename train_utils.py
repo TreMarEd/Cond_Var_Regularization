@@ -166,7 +166,7 @@ def compute_metrics(state, images, labels, d, l, method="CVR"):
 
 #TODO: find out why this crashes sometimes without error warning
 #@Partial(jax.jit, static_argnums=(5, 6, 7, 9, 10, 11))
-def get_grouped_batches(x, y, x_orig, y_orig, x_aug, size_0, size_1, ccs, key, batch_size, num_batches, d):
+def get_grouped_batches(x, y, x_orig, y_orig, x_aug, img_shape, key, batch_size, num_batches, d):
     '''
     Given singlett features/labels, original features/labels from dubletts and augmented features from dublettes, return
     the batches required to run one epoch of conditional variance regularization (CVR).
@@ -215,7 +215,7 @@ def get_grouped_batches(x, y, x_orig, y_orig, x_aug, size_0, size_1, ccs, key, b
     y_orig_perm = jnp.take(y_orig, idxs, axis=0)
 
     # initialize batch output
-    x_batches = jnp.zeros((num_batches, batch_size, size_0, size_1, ccs))
+    x_batches = jnp.zeros((num_batches, batch_size, img_shape[1], img_shape[0], img_shape[2]))
     y_batches = jnp.zeros((num_batches, batch_size))
 
     for i in range(num_batches):
@@ -236,7 +236,7 @@ def get_grouped_batches(x, y, x_orig, y_orig, x_aug, size_0, size_1, ccs, key, b
 
 
 def train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, learning_rate, batch_size, num_batches, c_vali, d, l, 
-              key, size_0, size_1, ccs, method="CVR", tf_seed=0, plot_string=""):
+              key, img_shape, method="CVR", tf_seed=0, plot_string=""):
     '''
     Given data, all relevant learning parameters, and a regularization method, returns a list containing the training state of 
     each epoch and the epoch that achieved the best validation score.
@@ -271,7 +271,7 @@ def train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, le
 
     tf.random.set_seed(tf_seed)
     key, subkey = jax.random.split(key)
-    state = create_train_state(cnn, subkey, size_0, size_1, ccs, learning_rate)
+    state = create_train_state(cnn, subkey, img_shape[0], img_shape[1], img_shape[2], learning_rate)
 
     metrics_history = {'train_loss': [], 'train_accuracy': [], 'vali_loss': [],
                        'vali_accuracy': [], 'test1_loss': [], 'test1_accuracy': [],
@@ -281,7 +281,7 @@ def train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, le
 
     x_batches, y_batches = get_grouped_batches(train_data["sing_features"], train_data["sing_labels"],
                                                train_data["dub_orig_features"], train_data["dub_labels"],
-                                               train_data["dub_aug_features"], size_0, size_1, ccs, subkey, batch_size, 
+                                               train_data["dub_aug_features"], img_shape, subkey, batch_size, 
                                                num_batches, d)
         
     for i in range(num_epochs):
@@ -366,7 +366,7 @@ def train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, le
 
 
 def model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, learning_rate, batch_size, num_batches,
-                    c_vali, d, ls, key, size_0, size_1, ccs, method="CVR", tf_seed=0):
+                    c_vali, d, ls, key, img_shape, method="CVR", tf_seed=0):
     '''
     Given data, all relevant learning parameters, a regularization method and a list of regularization parameters to be validated
     returns the final training state of the model that achieves the best validation score.
@@ -409,7 +409,7 @@ def model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epoc
         
         state, vali_accuracy, test1_accuracy, test2_accuracy = train_cnn(cnn, train_data, vali_data, test1_data, test2_data, 
                                                                          num_epochs, learning_rate, batch_size, num_batches, 
-                                                                         c_vali, d, l, subkey, size_0, size_1, ccs, method, 
+                                                                         c_vali, d, l, subkey, img_shape, method, 
                                                                          tf_seed)
         key, subkey = jax.random.split(key)
 
