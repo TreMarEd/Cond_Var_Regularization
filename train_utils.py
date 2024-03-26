@@ -12,11 +12,6 @@ import optax
 import matplotlib.pyplot as plt
 import numpy as np
 from jax.tree_util import Partial
-import logging
-
-
-logging.basicConfig(level=logging.INFO, filename=".\logfile.txt", filemode="w+",
-                    format="%(asctime)-15s %(levelname)-8s %(message)s")
 
 
 @struct.dataclass
@@ -41,7 +36,7 @@ def create_train_state(module, rng, size_0, size_1, ccs, learning_rate):
 
 
 @Partial(jax.jit, static_argnums=(3, 4, 5))
-def train_step(state, images, labels, d, l, method="CVP"):
+def train_step(state, images, labels, d, l, method="CVR"):
     '''
     Maps a training state, training features, training labels to the new training state after a single gradient descent step
 
@@ -108,7 +103,7 @@ def train_step(state, images, labels, d, l, method="CVP"):
 
 
 @Partial(jax.jit, static_argnums=(3, 4, 5))
-def compute_metrics(state, images, labels, d, l, method="CVP"):
+def compute_metrics(state, images, labels, d, l, method="CVR"):
     '''
     Given a training state and some features, labels, returns a new training state whose metrics have been updated according to the
     provided data.
@@ -168,6 +163,7 @@ def compute_metrics(state, images, labels, d, l, method="CVP"):
 
     return state
 
+
 #TODO: find out why this crashes sometimes without error warning
 #@Partial(jax.jit, static_argnums=(5, 6, 7, 9, 10, 11))
 def get_grouped_batches(x, y, x_orig, y_orig, x_aug, size_0, size_1, ccs, key, batch_size, num_batches, d):
@@ -203,7 +199,6 @@ def get_grouped_batches(x, y, x_orig, y_orig, x_aug, size_0, size_1, ccs, key, b
         y_batches (jnp.Array): array of shape (num_batches, batch_size) containing the labels for each batch
 
     '''
-
     # number of consecutive singlett datapoints per batch. Factor 2 from fact that each dublette contains 2 data points
     n_t = batch_size - 2*d
 
@@ -237,12 +232,11 @@ def get_grouped_batches(x, y, x_orig, y_orig, x_aug, size_0, size_1, ccs, key, b
             y_batches = y_batches.at[i, n_t + 2*j].set(y_orig_perm[d*i + j])
             y_batches = y_batches.at[i, n_t +(2*j)+1].set(y_orig_perm[d*i + j])
 
-    
     return x_batches, y_batches.astype(jnp.int32)
 
 
 def train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, learning_rate, batch_size, num_batches, c_vali, d, l, 
-              key, size_0, size_1, ccs, method="CVP", tf_seed=0):
+              key, size_0, size_1, ccs, method="CVR", tf_seed=0, plot_string=""):
     '''
     Given data, all relevant learning parameters, and a regularization method, returns a list containing the training state of 
     each epoch and the epoch that achieved the best validation score.
@@ -273,7 +267,6 @@ def train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, le
     if method not in ["CVP", "CVR"]:
         raise ValueError("Provided method nor recognized. Method should be either CVP or CVR")
 
-    logging.info(f"\n#################### START TRAINING {method} l = {l} ####################\n")
     print(f"\n#################### START TRAINING {method} l = {l} ####################\n")
 
     tf.random.set_seed(tf_seed)
@@ -286,20 +279,15 @@ def train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, le
 
     states = []
 
-    print("GETTING GROUPED BATCHES")
     x_batches, y_batches = get_grouped_batches(train_data["sing_features"], train_data["sing_labels"],
-                                                   train_data["dub_orig_features"], train_data["dub_labels"],
-                                                   train_data["dub_aug_features"], size_0, size_1, ccs, subkey, batch_size, num_batches, d)
-    print("DONE GETTING GROUPED BATCHES")
-    
+                                               train_data["dub_orig_features"], train_data["dub_labels"],
+                                               train_data["dub_aug_features"], size_0, size_1, ccs, subkey, batch_size, 
+                                               num_batches, d)
+        
     for i in range(num_epochs):
 
         key, subkey = jax.random.split(key)
-        """
-        x_batches, y_batches = get_grouped_batches(train_data["sing_features"], train_data["sing_labels"],
-                                                   train_data["dub_orig_features"], train_data["dub_labels"],
-                                                   train_data["dub_aug_features"], size_0, size_1, ccs, subkey, batch_size, num_batches, d)
-        """
+
         for j in range(num_batches):
             train_images = x_batches[j]
             train_labels = y_batches[j]
@@ -335,17 +323,10 @@ def train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, le
         for metric, value in test2_state.metrics.compute().items():
             metrics_history[f'test2_{metric}'].append(value)
 
-
-        logging.info(f"train epoch: {i}, loss: {metrics_history['train_loss'][-1]}, accuracy: {metrics_history['train_accuracy'][-1] * 100}")
-        logging.info(f"vali epoch: {i}, loss: {metrics_history['vali_loss'][-1]}, accuracy: {metrics_history['vali_accuracy'][-1] * 100}")
-        logging.info(f"test1 epoch: {i}, loss: {metrics_history['test1_loss'][-1]}, accuracy: {metrics_history['test1_accuracy'][-1] * 100}")
-        logging.info(f"test2 epoch: {i}, loss: {metrics_history['test2_loss'][-1]}, accuracy: {metrics_history['test2_accuracy'][-1] * 100}")
-        logging.info("\n############################################################# \n")
         print(f"train epoch: {i}, loss: {metrics_history['train_loss'][-1]}, accuracy: {metrics_history['train_accuracy'][-1] * 100}")
         print(f"vali epoch: {i}, loss: {metrics_history['vali_loss'][-1]}, accuracy: {metrics_history['vali_accuracy'][-1] * 100}")
         print(f"test1 epoch: {i}, loss: {metrics_history['test1_loss'][-1]}, accuracy: {metrics_history['test1_accuracy'][-1] * 100}")
         print(f"test2 epoch: {i}, loss: {metrics_history['test2_loss'][-1]}, accuracy: {metrics_history['test2_accuracy'][-1] * 100}")
-        
         print("\n############################################################# \n")
 
     ################## PLOT AND SAVE LEARNING CURVE ##################
@@ -361,29 +342,31 @@ def train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, le
 
     ax1.set_xlabel("epoch")
     ax2.set_xlabel("epoch")
-
     ax1.set_xticks(np.arange(num_epochs, step=2))
     ax2.set_xticks(np.arange(num_epochs, step=2))
     ax1.legend()
     ax2.legend()
     ax1.grid(True)
     ax2.grid(True)
-
     ax2.set_ylim(0.4, 1)
 
     lr_str = str(learning_rate).replace(".", ",")
     l_str = str(l).replace(".", ",")
-    plt.savefig(f".\learning_curves\learning_curve_{method}_lr{lr_str}_l{l_str}_e{num_epochs}_bs{batch_size}.png")
+    plt.savefig(f".\learning_curves\learning_curve_{method}_lr{lr_str}_l{l_str}_e{num_epochs}_bs{batch_size}_{plot_string}.png")
     plt.clf()
 
     best_epoch = max(enumerate(metrics_history['vali_accuracy']), key=lambda x: x[1])[0]
-    best_accuracy = metrics_history['vali_accuracy'][best_epoch]
+    best_state = states[best_epoch]
 
-    return states, best_epoch, best_accuracy
+    vali_accuracy = metrics_history['vali_accuracy'][best_epoch]
+    test1_accuracy = metrics_history['test1_accuracy'][best_epoch]
+    test2_accuracy = metrics_history['test2_accuracy'][best_epoch]
+
+    return best_state, vali_accuracy, test1_accuracy, test2_accuracy
 
 
 def model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, learning_rate, batch_size, num_batches,
-                    c_vali, d, ls, key, size_0, size_1, ccs, method="CVP", tf_seed=0):
+                    c_vali, d, ls, key, size_0, size_1, ccs, method="CVR", tf_seed=0):
     '''
     Given data, all relevant learning parameters, a regularization method and a list of regularization parameters to be validated
     returns the final training state of the model that achieves the best validation score.
@@ -416,46 +399,30 @@ def model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epoc
     if method not in ["CVP", "CVR"]:
         raise ValueError("Provided method nor recognized. Method should be either CVP or CVR")
 
-    logging.info(f"#################### PERFORMING {method} MODEL SELECTION FOR l = {ls} ####################")
     print(f"#################### PERFORMING {method} MODEL SELECTION FOR l = {ls} ####################")
 
     dic = {}
     best_l = None
-    best_accuracy = -1000
+    best_vali_accuracy = -1000
 
     for l in ls:
+        
+        state, vali_accuracy, test1_accuracy, test2_accuracy = train_cnn(cnn, train_data, vali_data, test1_data, test2_data, 
+                                                                         num_epochs, learning_rate, batch_size, num_batches, 
+                                                                         c_vali, d, l, subkey, size_0, size_1, ccs, method, 
+                                                                         tf_seed)
         key, subkey = jax.random.split(key)
-        states, epoch, accuracy = train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
-                                            learning_rate, batch_size, num_batches, c_vali, d, l, subkey, 
-                                            size_0, size_1, ccs, method, tf_seed)
 
-        if accuracy > best_accuracy:
+        if vali_accuracy > best_vali_accuracy:
             best_l = l
-            best_accuracy = accuracy
-
-        dic[str(l)] = {"epoch": None, "accuracy": None, "states": states}
-        dic[str(l)]["epoch"] = epoch
-        dic[str(l)]["accuracy"] = accuracy
-
-    best_epoch = dic[str(best_l)]["epoch"]
-    logging.info("\n#############################################################\n")
-    logging.info(f"THE BEST REGULRAIZATION PARAMETER IS {best_l} AT EPOCH {best_epoch} WITH VALI ACCURACY {best_accuracy}")
+            best_state = state
+            best_vali_accuracy = vali_accuracy
+            best_test1_accuracy = test1_accuracy
+            best_test2_accuracy = test2_accuracy
+    
     print("\n#############################################################\n")
-    print(f"THE BEST REGULRAIZATION PARAMETER IS {best_l} AT EPOCH {best_epoch} WITH VALI ACCURACY {best_accuracy}")
+    print(f"THE BEST REGULRAIZATION PARAMETER IS {best_l} WITH:")
+    print(f"\nACHIEVED NON-SHIFTED {method} TEST ACCURACY: {best_test1_accuracy}")
+    print(f"\nACHIEVED SHIFTED {method} TEST ACCURACY: {best_test2_accuracy}")
 
-    state = dic[str(best_l)]["states"][best_epoch]
-    test1_state = state
-    test2_state = state
-
-    test1_state = compute_metrics(test1_state, test1_data["features"], test1_data["labels"], d=0, l=best_l)
-    test2_state = compute_metrics(test2_state, test2_data["features"], test2_data["labels"], d=0, l=best_l)
-
-    test1_accuracy = test1_state.metrics.compute()["accuracy"]
-    test2_accuracy = test2_state.metrics.compute()["accuracy"]
-
-    logging.info(f"\nACHIEVED NON-SHIFTED {method} TEST ACCURACY: {test1_accuracy}")
-    logging.info(f"\nACHIEVED SHIFTED {method} TEST ACCURACY: {test2_accuracy}")
-    print(f"\nACHIEVED NON-SHIFTED {method} TEST ACCURACY: {test1_accuracy}")
-    print(f"\nACHIEVED SHIFTED {method} TEST ACCURACY: {test2_accuracy}")
-
-    return state, test1_accuracy, test2_accuracy
+    return best_state, test1_accuracy, test2_accuracy

@@ -18,11 +18,7 @@ import jax.numpy as jnp
 import keras
 from scipy import ndimage
 import os
-import logging
 import train_utils as tu
-
-logging.basicConfig(level=logging.INFO, filename=".\logfile.txt", filemode="w+",
-                    format="%(asctime)-15s %(levelname)-8s %(message)s")
 
 
 class CNN_mnist(nn.Module):
@@ -70,7 +66,6 @@ def create_aug_mnist(c, seed, n):
 
     '''
 
-    logging.info("\n#################### AUGMENTING MNIST DATA #################### \n")
     print("\n#################### AUGMENTING MNIST DATA #################### \n")
 
     (x, y), (x_test1, y_test) = keras.datasets.mnist.load_data()
@@ -217,7 +212,6 @@ def load_aug_mnist(c, seed, n):
         return create_aug_mnist(c, seed, n)
 
     else:
-        logging.info("\n#################### LOADING MNIST DATA #################### \n")
         print("\n#################### LOADING MNIST DATA #################### \n")
         x_train_sing = jnp.load(base_path + "\\train\\x_train_sing.npy")
         y_train_sing = jnp.load(base_path + "\\train\\y_train_sing.npy")
@@ -291,16 +285,6 @@ if __name__ == "__main__":
     state_cvr, t1_accuracy_cvr, t2_accuracy_cvr = tu.model_selection(cnn, train_data, vali_data, test1_data, test2_data,num_epochs, 
                                                                   learning_rate, batch_size, num_batches, c, d, ls, key, 
                                                                   size_0=28, size_1=28, ccs=1, method="CVR", tf_seed=0)
-    
-    logging.info("\n###########################################################################\n")
-
-    logging.info(f"NON-REGULARIZED NON-ROTATED TEST ACCURACY = {t1_accuracy}")
-    logging.info(f"CVP NON-ROTATED TEST ACCURACY = {t1_accuracy_cvp}")
-    logging.info(f"CVR NON-ROTATED TEST ACCURACY = {t1_accuracy_cvr}")
-
-    logging.info(f"\nNON-REGULARIZED ROTATED TEST ACCURACY = {t2_accuracy}")
-    logging.info(f"CVP ROTATED TEST ACCURACY = {t2_accuracy_cvp}")
-    logging.info(f"CVR ROTATED TEST ACCURACY = {t2_accuracy_cvr}")
     
     print("\n###########################################################################\n")
 
