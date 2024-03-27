@@ -66,20 +66,19 @@ def resize_degrade_CelebA(CelebA_path, resize_0, resize_1, seed):
     '''
 
     print(f"########################### CREATING RESIZED AND DEGRADED CELEBA ###########################")
-
-    if not os.path.exists(CelebA_path):
+    orig_path = CelebA_path + r"\CelebA\celeba"
+    if not os.path.exists(orig_path):
         raise Exception("The provided path to the original Celeb A dataset does not exist.")
 
     # create the relevant directories and copy all relevant files
-    orig_path = CelebA_path + r"\celeba"
-    resized_path = CelebA_path + fr"_resized{resize_0}x{resize_1}_seed{seed}\celeba"
+    resized_path = CelebA_path + fr"\CelebA_resized{resize_0}x{resize_1}_seed{seed}\celeba"
     resized_degraded_path = CelebA_path + fr"_resized{resize_0}x{resize_1}_degraded_seed{seed}\celeba"
 
-    if not os.path.exists(resized_path + r"\img_align_celeba"):
-        os.makedirs(resized_path + r"\img_align_celeba")
+    if not os.path.exists(resized_path + r"\celeba\img_align_celeba"):
+        os.makedirs(resized_path + r"\celeba\img_align_celeba")
 
-    if not os.path.exists(resized_degraded_path + r"\img_align_celeba"):
-        os.makedirs(resized_degraded_path + r"\img_align_celeba")
+    if not os.path.exists(resized_degraded_path + r"\celeba\img_align_celeba"):
+        os.makedirs(resized_degraded_path + r"\celeba\img_align_celeba")
 
     # only txt files should be copied, and not the original images
     txt_files = [f for f in os.listdir(orig_path) if os.path.isfile(os.path.join(orig_path, f))]
@@ -197,9 +196,9 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
                       case a downstream error in the sample_arrays function will be raised")
 
     key = jax.random.key(seed)
-    CelebA = datasets.CelebA(root=base_path + f".\CelebA_resized{resize_0}x{resize_1}_seed{seed}", split='all', target_type='attr',
+    CelebA = datasets.CelebA(root=base_path + fr"\images\CelebA_resized{resize_0}x{resize_1}_seed{seed}", split='all', target_type='attr',
                              transform=ToTensor(), download=True)
-    CelebA_d = datasets.CelebA(root=base_path + f".\CelebA_resized{resize_0}x{resize_1}_degraded_seed{seed}", split='all', target_type='attr',
+    CelebA_d = datasets.CelebA(root=base_path + fr"\images\CelebA_resized{resize_0}x{resize_1}_degraded_seed{seed}", split='all', target_type='attr',
                                transform=ToTensor(), download=True)
     
     # separate features according to whether Y=0 or Y=1
@@ -333,7 +332,7 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
     y_test2 = y_test2.astype(jnp.int32)
     
     ################################### persist everything ###################################
-    dir_path = base_path + fr"\augmented_CelebA_resized{resize_0}x{resize_1}_seed{seed}_label{label_idx}"
+    dir_path = base_path + fr"\augmented\augmented_CelebA_resized{resize_0}x{resize_1}_seed{seed}_label{label_idx}"
     if not os.path.exists(dir_path):
         os.makedirs(dir_path + r"\train")
         os.makedirs(dir_path + r"\vali")
@@ -357,7 +356,7 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
     return None
 
 
-def load_celeba(base_path, resize_0, resize_1, seed, label_idx, augmented=True):
+def load_celeba(base_path, resize_0, resize_1, seed, label_idx):
     '''
     Parameters:
         augmented (bool): boolean stating whether to load an augmented or non-augmented dataset
@@ -372,25 +371,18 @@ def load_celeba(base_path, resize_0, resize_1, seed, label_idx, augmented=True):
     Returns:
         train_data (dic): dictionary with keys "sing_features", "sing_labels", "dub_orig_featrues", "dub_aug_features", "dub_labels".
     '''
-    if augmented:
-        dir_path = base_path + fr"\augmented_CelebA_resized{resize_0}x{resize_1}_seed{seed}_label{label_idx}"
-    else: 
-        dir_path = base_path + fr"\nonaugmented_CelebA_resized{resize_0}x{resize_1}_seed{seed}_label{label_idx}"
-
+    
+    dir_path = base_path + fr"\augmented_CelebA_resized{resize_0}x{resize_1}_seed{seed}_label{label_idx}"
+    
     if not os.path.exists(dir_path):
         raise OSError(2, 'No such file or directory', dir_path)
 
     print("\n#################### LOADING AUGMENTED CELEBA DATA #################### \n")
-    if augmented:
-        x_train_sing = jnp.load(dir_path + "\\train\\x_train_sing.npy")
-        y_train_sing = jnp.load(dir_path + "\\train\\y_train_sing.npy")
-        x_train_orig = jnp.load(dir_path + "\\train\\x_train_orig.npy")
-        y_train_orig = jnp.load(dir_path + "\\train\\y_train_orig.npy")
-        x_train_aug = jnp.load(dir_path + "\\train\\x_train_aug.npy")
-    
-    else:
-        x_train = jnp.load(dir_path + "\\train\\x_train.npy")
-        y_train = jnp.load(dir_path + "\\train\\y_train.npy")
+    x_train_sing = jnp.load(dir_path + "\\train\\x_train_sing.npy")
+    y_train_sing = jnp.load(dir_path + "\\train\\y_train_sing.npy")
+    x_train_orig = jnp.load(dir_path + "\\train\\x_train_orig.npy")
+    y_train_orig = jnp.load(dir_path + "\\train\\y_train_orig.npy")
+    x_train_aug = jnp.load(dir_path + "\\train\\x_train_aug.npy")
 
     x_vali = jnp.load(dir_path + "\\vali\\x_vali.npy")
     y_vali = jnp.load(dir_path + "\\vali\\y_vali.npy")
@@ -400,15 +392,9 @@ def load_celeba(base_path, resize_0, resize_1, seed, label_idx, augmented=True):
     y_test1 = jnp.load(dir_path + "\\test\\y_test1.npy")
     y_test2 = jnp.load(dir_path + "\\test\\y_test2.npy")
 
-    if augmented:
-        train_data = {"sing_features": x_train_sing, "sing_labels": y_train_sing, "dub_orig_features": x_train_orig,
-                      "dub_labels": y_train_orig, "dub_aug_features": x_train_aug}
-        
-    else:
-        train_data = {"features": x_train, "labels": y_train}
-
+    train_data = {"sing_features": x_train_sing, "sing_labels": y_train_sing, "dub_orig_features": x_train_orig,
+                  "dub_labels": y_train_orig, "dub_aug_features": x_train_aug}
     vali_data = {"features": x_vali, "labels": y_vali}
-
     test1_data = {"features": x_test1, "labels": y_test1}
     test2_data = {"features": x_test2, "labels": y_test2}
 
@@ -432,17 +418,16 @@ if __name__ == "__main__":
     l = 1000
 
     ######################################## LOAD ORIGINAL CELEBA DATASET  ########################################
-    base_path = r"C:\Users\Marius\Desktop\DAS\Cond_Var_Regularization"
-    CelebA_path = base_path + r"\CelebA"
+    data_path = r"C:\Users\Marius\Desktop\DAS\Cond_Var_Regularization\data\celeb"
     
-    if not os.path.exists(CelebA_path):
-        datasets.CelebA(root=f".\CelebA", split='all', target_type='attr', transform=ToTensor(), download=True)
+    if not os.path.exists(data_path + r"\images\CelebA"):
+        datasets.CelebA(root=data_path + r"\images\CelebA", split='all', target_type='attr', transform=ToTensor(), download=True)
 
     ######################################## CREATE RESIZED DEGRADED DATA  ########################################
     seed = 5297
-    dir_path = CelebA_path + fr"_resized{img_shape[0]}x{img_shape[1]}_degraded_seed{seed}"
+    dir_path = data_path + fr"\images\CelebA_resized{img_shape[0]}x{img_shape[1]}_degraded_seed{seed}"
     if not os.path.exists(dir_path):
-        resize_degrade_CelebA(CelebA_path, img_shape[0], img_shape[1], seed)
+        resize_degrade_CelebA(data_path + r"\images", img_shape[0], img_shape[1], seed)
 
     # initialize results
     results = {}
@@ -458,12 +443,13 @@ if __name__ == "__main__":
     for seed in seeds:
         ######################################## TRAIN BEARD MODELS ########################################
         # 24 is the index of beards
-        dir_path = base_path + fr"\augmented_CelebA_resized{img_shape[0]}x{img_shape[1]}_seed{seed}_label24"
+        dir_path = data_path + fr"\augmented\augmented_CelebA_resized{img_shape[0]}x{img_shape[1]}_seed{seed}_label24"
         if not os.path.exists(dir_path):
-            create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, 24, img_shape[0], img_shape[1], seed, 
+            create_augmented_CelebA(data_path, n_train, n_vali, n_test, f_1, f_aug, 24, img_shape[0], img_shape[1], seed, 
                                     flip_y=True)
         
-        train_data, vali_data, test1_data, test2_data = load_celeba(base_path, img_shape[0], img_shape[1], seed, 24)
+        train_data, vali_data, test1_data, test2_data = load_celeba(data_path + r"\augmented", img_shape[0], img_shape[1], seed,
+                                                                    24)
         
         cnn = CNN_celeba()
         key = jax.random.key(seed)
@@ -501,11 +487,11 @@ if __name__ == "__main__":
             print(f"\n#################### RUNNING {label} ####################")
 
             # create data if it doesn't exist, load it
-            dir_path = base_path + fr"\augmented_CelebA_resized{img_shape[0]}x{img_shape[1]}_seed{seed}_label{idx}"
+            dir_path = data_path + fr"\augmented\augmented_CelebA_resized{img_shape[0]}x{img_shape[1]}_seed{seed}_label{idx}"
             if not os.path.exists(dir_path):
-                create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, idx, img_shape[0], img_shape[1], seed)
+                create_augmented_CelebA(data_path, n_train, n_vali, n_test, f_1, f_aug, idx, img_shape[0], img_shape[1], seed)
 
-            train_data, vali_data, t1_data, t2_data = load_celeba(base_path, img_shape[0], img_shape[1], seed, idx)
+            train_data, vali_data, t1_data, t2_data = load_celeba(data_path + r"\augmented", img_shape[0], img_shape[1], seed, idx)
             
             # no regularization run
             key = jax.random.key(seed)
@@ -541,21 +527,9 @@ if __name__ == "__main__":
 
     for label in labels.keys():
         print(f"\n################### {label} ################### \n")
-
-        tmp = np.average(results[label]["NO-REG"]["test1"])
-        print(f"NON-REGULARIZED NON-SHIFTED TEST ACCURACY = {tmp}")
-
-        tmp = np.average(results[label]["CVR"]["test1"])
-        print(f"CVR NON-SHIFTED TEST ACCURACY = {tmp}")
-        
-        tmp = np.average(results[label]["TRANSFER"]["test1"])
-        print(f"CVR TRANSFER NON-SHIFTED TEST ACCURACY = {tmp}")
-
-        tmp = np.average(results[label]["NO-REG"]["test2"])
-        print(f"\nNON-REGULARIZED SHIFTED TEST ACCURACY = {tmp}")
-
-        tmp = np.average(results[label]["CVR"]["test2"])
-        print(f"CVR SHIFTED TEST ACCURACY = {tmp}")
-
-        tmp = np.average(results[label]["TRANSFER"]["test2"])
-        print(f"CVR TRANSFER SHIFTED TEST ACCURACY = {tmp}")
+        print("NON-REGULARIZED NON-SHIFTED TEST ACCURACY = " + str(np.average(results[label]["NO-REG"]["test1"])))
+        print("CVR NON-SHIFTED TEST ACCURACY = " + str(np.average(results[label]["CVR"]["test1"])))
+        print("CVR TRANSFER NON-SHIFTED TEST ACCURACY = " + str(np.average(results[label]["TRANSFER"]["test1"])))
+        print("\nNON-REGULARIZED SHIFTED TEST ACCURACY = " + str(np.average(results[label]["NO-REG"]["test2"])))
+        print("CVR SHIFTED TEST ACCURACY = " + str(np.average(results[label]["CVR"]["test2"])))
+        print("CVR TRANSFER SHIFTED TEST ACCURACY = " + str(np.average(results[label]["TRANSFER"]["test2"])))
