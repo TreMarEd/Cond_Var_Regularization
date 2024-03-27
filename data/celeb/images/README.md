@@ -1,0 +1,1 @@
+the script will save the original, the resized and the resized and degraded CelebA data here
