@@ -1,5 +1,21 @@
 """
+Author: Marius Tresoldi, spring 2024
+
+The following script implements some training utilities to implement conditional variance regularization 
+in jax/flax for domain shift robust transfer learning in computer vision. The idea of conditional variance regularization is
+introduced in the following paper:
+
+https://arxiv.org/abs/1710.11469
+
+The general training loop structure is pretty much copy-pasted from the following MNIST flax tutorial:
+
+https://flax.readthedocs.io/en/latest/experimental/nnx/mnist_tutorial.html
+
+In the following, (ID, Y) groups that only contain a single data point will be called singletts, while (ID, Y) groups containing
+exactly two datapoints through data augmentation will be called dubletts.
 """
+
+#TODO: remove image_shape as function inpu as it can always be inferred from other inputs
 
 import tensorflow as tf
 import jax
@@ -8,8 +24,6 @@ from clu import metrics
 from flax.training import train_state
 from flax import struct
 import optax
-import matplotlib.pyplot as plt
-import numpy as np
 from jax.tree_util import Partial
 
 
@@ -25,10 +39,9 @@ class TrainState(train_state.TrainState):
     metrics: Metrics
 
 
-def create_train_state(module, rng, size_0, size_1, ccs, learning_rate):
+def create_train_state(module, rng, img_shape, learning_rate):
     """Creates an initial `TrainState`."""
-    params = module.init(rng, jnp.ones([1, size_0, size_1, ccs]))['params']
-
+    params = module.init(rng, jnp.ones([1, *img_shape]))['params']
     tx = optax.adam(learning_rate)
 
     return TrainState.create(apply_fn=module.apply, params=params, tx=tx, metrics=Metrics.empty())
@@ -37,17 +50,20 @@ def create_train_state(module, rng, size_0, size_1, ccs, learning_rate):
 @Partial(jax.jit, static_argnums=(3, 4, 5))
 def train_step(state, images, labels, d, l, method="CVR"):
     '''
-    Maps a training state, training features, training labels to the new training state after a single gradient descent step
+    Maps a training state, training images, training labels to the new training state after a single gradient descent step
 
     Parameters:
-        state (TrainState): the current training state consisting of parameters, a forward pass function, an optimizer and metrics
-        images (jnp.Array): MNIST trainig image batch of shape (<batch_size>, 28, 28, 1). The last 2*d samples MUST be from dublettes
-                            where consecutive samples are from the same dublette. All samples before are singlettes
+        state (TrainState): the current training state consisting of parameters, a forward pass function, an optimizer and 
+                            metrics
+        images (jnp.Array): MNIST trainig image batch of shape (<batch_size>, <size_0>, <size_1>, <color channels>). 
+                            The last 2*d samples MUST be from dublettes where consecutive samples are from the same dublette. 
+                            All samples before are singlettes
         labels (jnp.Array): MNIST label batch of shape (<batch_size>,). The last 2*d samples MUST be from dublettes
                             where consecutive samples are from the same dublette. All samples before are singlettes
-        d (int): the number of (ID, Y) groups with cardinality bigger 1
-        l (float): conditional variance regularization parameter
-        method (string): regularization method to be applied, either "CVP" or "CVR" for conditional variance of prediction or representation
+        d (int):            number of dublettes per batch
+        l (float):          conditional variance regularization parameter
+        method (string):    regularization method to be applied, either "CVP" or "CVR" for conditional variance of prediction 
+                            or representation
 
     Returns:
         state (TrainState): new updated training state after performing one gradient descent step on the provided batch
@@ -56,25 +72,21 @@ def train_step(state, images, labels, d, l, method="CVR"):
     if method not in ["CVP", "CVR"]:
         raise ValueError("Provided method not recognized. Method should be either CVP or CVR")
 
-    # m is the number of unique (ID, Y) groups in the batch, meaning both singletts (group of cardinality 1)
-    # and dublettes (group of cardinality 2). d is the number of unique dublettes in the batch. The number of singletts is hence
-    # batch_size - 2*d
+    # m is the number of unique (ID, Y) groups in the batch, meaning both singletts and dublettes. d is the number of 
+    # unique dublettes in the batch. The number of singletts is hence batch_size - 2*d
     m = jnp.shape(images)[0] - d
 
-    # number of consecutive singleton entries, which is batch_isze - 2*d or m -d
+    # number of consecutive singleton entries, which is batch_size - 2*d or m -d
     n_t = m - d
 
-    def loss_fn(params_):
-
-        # forward pass
-        logits, repr = state.apply_fn({'params': params_}, images)
+    def loss_fn(params):
+        logits, repr = state.apply_fn({'params': params}, images)
         # initialize regularization term
         C = 0
 
         # regularization contribution of singlettes is 0. Hence, only looking at dublettes, one can gather the dublette info
         # from the last 2d samples in the data
         for i in range(d):
-
             # get indices of samples in the same dublette
             idxs = jnp.array([n_t + 2*i, n_t + 2*i + 1])
 
@@ -106,22 +118,24 @@ def compute_metrics(state, images, labels, d, l, method="CVR"):
     provided data.
 
     Parameters:
-        state (TrainState): the current training state consisting of parameters, a forward pass function, an optimizer and metrics
-        images (jnp.Array): MNIST imagees of shape (<n>, 28, 28, 1). The last 2*d samples MUST be from dublettes
+        state (TrainState): the current training state consisting of parameters, a forward pass function, an optimizer and 
+                            metrics
+        images (jnp.Array): MNIST trainig image batch of shape (<batch_size>, <size_0>, <size_1>, <color channels>). 
+                            The last 2*d samples MUST be from dublettes where consecutive samples are from the same dublette. 
+                            All samples before are singlettes
+        labels (jnp.Array): MNIST label batch of shape (<batch_size>,). The last 2*d samples MUST be from dublettes
                             where consecutive samples are from the same dublette. All samples before are singlettes
-        labels (jnp.Array): MNIST labels  of shape (<batch_size>,). The last 2*d samples MUST be from dublettes
-                            where consecutive samples are from the same dublette. All samples before are singlettes
-        d (int): the number of (ID, Y) groups with cardinality bigger 1
-        l (float): conditional variance regularization parameter
-        method (string): regularization method to be applied, either "CVP" or "CVR" for conditional variance of prediction or representation
+        d (int):            number of dublettes per batch
+        l (float):          conditional variance regularization parameter
+        method (string):    regularization method to be applied, either "CVP" or "CVR" for conditional variance of prediction 
+                            or representation
 
     Returns:
         state (TrainState): new updated training state which contains the calculated metrics in its Metrics attribute
     '''
 
-    # m is the number of unique (ID, Y) groups in the batch, meaning both singletts (group of cardinality 1)
-    # and dublettes (group of cardinality 2). d is the number of unique dublettes in the batch. The number of singletts is hence
-    # batch_size - 2*d
+    # m is the number of unique (ID, Y) groups in the batch, meaning both singletts and dublettes. d is the number of 
+    #unique dublettes in the batch. The number of singletts is hence batch_size - 2*d
     m = jnp.shape(images)[0] - d
 
     # number of consecutive singleton entries, which is batch_isze - 2*d or m -d
@@ -152,7 +166,6 @@ def compute_metrics(state, images, labels, d, l, method="CVR"):
 
     loss = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=labels).mean() + l*C
 
-    # can't find any documentation on what "single_from_model_output" does except for literal source code
     metric_updates = state.metrics.single_from_model_output(logits=logits, labels=labels, loss=loss)
     metrics = state.metrics.merge(metric_updates)
     state = state.replace(metrics=metrics)
@@ -160,7 +173,8 @@ def compute_metrics(state, images, labels, d, l, method="CVR"):
     return state
 
 
-#TODO: find out why this crashes sometimes without error warning
+#TODO: when jitted this function terminated the program without any error or warning. This is impossible as it only
+#consists of a for loop with no statement that could terminate the program. This might acutally be a jax bug
 #@Partial(jax.jit, static_argnums=(5, 6, 7, 9, 10, 11))
 def get_grouped_batches(x, y, x_orig, y_orig, x_aug, img_shape, key, batch_size, num_batches, d):
     '''
@@ -169,29 +183,34 @@ def get_grouped_batches(x, y, x_orig, y_orig, x_aug, img_shape, key, batch_size,
 
     Detailed explanation: CVR training requires that each (ID, Y) group is fully contained in exactly one batch. The following
     function assigns exactly d dublettes to each batch. First <batch_size - 2d> datapoints in batch are singletts. 
-    Last 2*d data points are from dubletts, s.t. consecutive groups of 2 belong to  same dublette.
+    Last 2*d data points are from dubletts, s.t. datapoints of same dublette are consecutive to each othre.
 
-    Based on batch_size, num_batches and d some singlett and dublett data is not put in any output batch because batches
-    that can only be partially filled are discarded.
+    Note that because every batch needs to contain exactly d dublettes, it is possible that some data provided to the function
+    is not put in any batch in order to satisfy this constraint. Hence, one should optimize the choice of batch_size, num_batches
+    d, and c, where c is the number of augmented data points. 
+    F.e. one can set batch_size to 100+d and choose c such that batch_size = (n+c)/(100+d) is an integer.
 
     Parameters:
-        x (jnp.Array): full MNIST training singlette features of shape (n-c, 28, 28 ,1), where n is the number 
-                       of original training data points, c is the number of original data points that were augmented to dublettes by rotation
+        x (jnp.Array):      training singlette features of shape (n-c, *img_shape), where n is the number 
+                            of original training data points, c is the number of original data points that were augmented 
+                            to dublettes 
 
-        y (jnp.Array): full MNIST training singlette labels of shape (n-c,), where n is the number 
-                       of original training data points, c is the number of original data points that were augmented to dublettes by rotation
-        x_orig (jnp.Array): MNIST non-rotated training features of shape (c, 28, 28, 1) corresponding to the original c data points that were chosen
-                            to be augmented by rotation
-        y_orig (jnp.Array): MNIST training labels of shape (c, 28, 28, 1) corresponding to the original c data points that were chosen
-                            to be augmented by rotation
-        x_aug (jnp.Array): MNIST rotated training features of shape (c, 28, 28, 1) corresponding to the rotated versions of the images in x_orig
-        key (PRNGKey): PRNG key for data permutation
-        batch_size (int): number of data points per output batch
-        num_batches (int): number of output batches
-        d (int): the number of dublette groups per batch
+        y (jnp.Array):      training singlette labels of shape (n-c,), where n is the number 
+                            of original training data points, c is the number of original data points that were augmented to dublettes
+        x_orig (jnp.Array): non-augmented training features of shape (c, *img_shape) corresponding to the original c data points 
+                            that were chosen to be augmented
+        y_orig (jnp.Array): training labels of shape (c, *img_shape) corresponding to the original c data points that were chosen
+                            to be augmented
+        x_aug (jnp.Array):  augmented training features of shape (c, img_shape) corresponding to the augmentd versions of the 
+                            images in x_orig
+        img_shape (tuple):  tuple describing the shape of a single input image
+        key (PRNGKey):      PRNG key for data permutation
+        batch_size (int):   number of data points per output batch
+        num_batches (int):  number of output batches
+        d (int):            the number of dublette groups per batch
 
     Returns:
-        x_batches (jnp.Array): array of shape (num_batches, batch_size, 28, 28, 1) containing the images for each batch
+        x_batches (jnp.Array): array of shape (num_batches, batch_size, *img_shape) containing the images for each batch
         y_batches (jnp.Array): array of shape (num_batches, batch_size) containing the labels for each batch
 
     '''
@@ -231,33 +250,39 @@ def get_grouped_batches(x, y, x_orig, y_orig, x_aug, img_shape, key, batch_size,
     return x_batches, y_batches.astype(jnp.int32)
 
 
-def train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, learning_rate, batch_size, num_batches, c_vali, d, l, 
-              key, img_shape, method="CVR", tf_seed=0, plot_string=""):
+def train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, learning_rate, batch_size, num_batches, c_vali, d,
+              l, key, img_shape, method="CVR", tf_seed=0):
     '''
-    Given data, all relevant learning parameters, and a regularization method, returns a list containing the training state of 
-    each epoch and the epoch that achieved the best validation score.
+    Given data, all relevant learning parameters and a regularization method, returns the training state with the best
+    validation accuracy, all relevant accuracies (vali, test1, test2) and saves the learning curve.
 
     Parameters:
-        train_data (dic): dictionary with keys "sing_features", "sing_labels", "dub_orig_featrues", "dub_aug_features", "dub_labels".
-                          here "sing" and "dub" refers to singlett and dublette groups, where a singlett is defined as a (Y, ID) group only 
-                          containing a single datapoint, and a dublette a group containing exactly two datapoints, namely the original one
-                          and the augmented one. 
-        vali_data (dic): dictionary with keys "featrues" and "labels", values are jax arrays containing the data
-        num_epochs (int): number of training epochs
-        learning_rate (float): learning rate
-        batch_size (int): batch size
-        num_batches (int): number of batches
-        c (int): number of augmented mnist data points
-        d (int): number of dublettes to be contained in each training batch
-        l (float): regularization parameter
-        key (jax.RNG): jax RNG key
-        method (string): regularization method, either "CVP" or "CVR" for conditional variance of prediction and representation respectively
-        tf_seed (int): tensorflow rng seed
+        cnn (flax module):      cnn model to be trained
+        train_data (dic):       dictionary with keys "sing_features", "sing_labels", "dub_orig_featrues", "dub_aug_features", 
+                                "dub_labels"."sing" and "dub" refers to singlett and dublette groups. values are jax arrays 
+                                containing the data
+        vali_data (dic):        dictionary with keys "features" and "labels", values are jax arrays containing the vali data
+        test1_data (dic):       dictionary with keys "features" and "labels", values are jax arrays containing the test1 data
+        test2_data (dic):       dictionary with keys "features" and "labels", values are jax arrays containing the test2 data
+        num_epochs (int):       number of training epochs
+        learning_rate (float):  learning rate
+        batch_size (int):       batch size
+        num_batches (int):      number of batches
+        c_vali (int):           number of augmented mnist data points in the vali set. This information is needed to efficiently
+                                calculate the regularization for the vali set, as the last 2*c data points will be dublettes
+        d (int):                number of dublettes to be contained in each training batch
+        l (float):              regularization parameter
+        key (jax.RNG):          jax RNG key
+        img_shape (tuple):      tuple describing the shape of a single input image
+        method (string):        regularization method, either "CVP" or "CVR" for conditional variance of prediction and
+                                representation respectively
+        tf_seed (int):          tensorflow rng seed
 
     Returns:
-        states (list of TrainStates): list containing the training states after each epoch
-        best_epoch (int): epoch with the lowest validation loss
-        best_accuracy (float): accuracy of the epoch with the lowest validation loss
+        best_state (TrainStates):   the training state with the best validation accuracy
+        vali_accuracy (float):      validation accuracy of the best state
+        test1_accuracy (float):     test 1 accuracy of the best state
+        test2_accuracy (float):     test 2 accuracy of the best state
     '''
 
     if method not in ["CVP", "CVR"]:
@@ -267,7 +292,7 @@ def train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, le
 
     tf.random.set_seed(tf_seed)
     key, subkey = jax.random.split(key)
-    state = create_train_state(cnn, subkey, img_shape[0], img_shape[1], img_shape[2], learning_rate)
+    state = create_train_state(cnn, subkey, img_shape, learning_rate)
 
     metrics_history = {'train_loss': [], 'train_accuracy': [], 'vali_loss': [],
                        'vali_accuracy': [], 'test1_loss': [], 'test1_accuracy': [],
@@ -325,32 +350,6 @@ def train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, le
         print(f"test2 epoch: {i}, loss: {metrics_history['test2_loss'][-1]}, accuracy: {metrics_history['test2_accuracy'][-1] * 100}")
         print("\n############################################################# \n")
 
-    ################## PLOT AND SAVE LEARNING CURVE ##################
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
-
-    ax1.set_title('CE Loss')
-    ax2.set_title('Accuracy')
-
-    dic = {'train': 'train', 'vali': 'validation', 'test1': 'test1', 'test2': 'test2'}
-    for dataset in ('train', 'vali', 'test1', 'test2'):
-        ax1.plot(metrics_history[f'{dataset}_loss'], label=f'{dic[dataset]}')
-        ax2.plot(metrics_history[f'{dataset}_accuracy'], label=f'{dic[dataset]}')
-
-    ax1.set_xlabel("epoch")
-    ax2.set_xlabel("epoch")
-    ax1.set_xticks(np.arange(num_epochs, step=2))
-    ax2.set_xticks(np.arange(num_epochs, step=2))
-    ax1.legend()
-    ax2.legend()
-    ax1.grid(True)
-    ax2.grid(True)
-    ax2.set_ylim(0.4, 1)
-
-    lr_str = str(learning_rate).replace(".", ",")
-    l_str = str(l).replace(".", ",")
-    plt.savefig(f".\learning_curves\learning_curve_{method}_lr{lr_str}_l{l_str}_e{num_epochs}_bs{batch_size}_{plot_string}.png")
-    plt.clf()
-
     best_epoch = max(enumerate(metrics_history['vali_accuracy']), key=lambda x: x[1])[0]
     best_state = states[best_epoch]
 
@@ -368,28 +367,31 @@ def model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epoc
     returns the final training state of the model that achieves the best validation score.
 
     Parameters:
-        train_data (dic): dictionary with keys "sing_features", "sing_labels", "dub_orig_featrues", "dub_aug_features", "dub_labels".
-                          here "sing" and "dub" refers to singlett and dublette groups, where a singlett is defined as a (Y, ID) group only 
-                          containing a single datapoint, and a dublette a group containing exactly two datapoints, namely the original one
-                          and the augmented one. 
-        vali_data (dic): dictionary with keys "featrues" and "labels", values are jax arrays containing the data
-        test1_data (dic): dictionary with keys "featrues" and "labels", containing non-rotated, non-augmented test data
-        test2_data (dic): dictionary with keys "featrues" and "labels", containing rotated, non-augmented test data
-        num_epochs (int): number of training epochs
-        learning_rate (float): learning rate
-        batch_size (int): batch size
-        num_batches (int): number of batches
-        c (int): number of augmented mnist data points
-        d (int): number of dublettes to be contained in each training batch
-        ls (list): list of regularization parameters to be validated and selected
-        key (jax.RNG): jax RNG key
-        method (string): regularization method, either "CVP" or "CVR" for conditional variance of prediction and representation respectively
-        tf_seed (int): tensorflow rng seed
+        cnn (flax module):      cnn model to be trained
+        train_data (dic):       dictionary with keys "sing_features", "sing_labels", "dub_orig_featrues", "dub_aug_features", 
+                                "dub_labels"."sing" and "dub" refers to singlett and dublette groups. values are jax arrays 
+                                containing the data
+        vali_data (dic):        dictionary with keys "features" and "labels", values are jax arrays containing the vali data
+        test1_data (dic):       dictionary with keys "features" and "labels", values are jax arrays containing the test1 data
+        test2_data (dic):       dictionary with keys "features" and "labels", values are jax arrays containing the test2 data
+        num_epochs (int):       number of training epochs
+        learning_rate (float):  learning rate
+        batch_size (int):       batch size
+        num_batches (int):      number of batches
+        c_vali (int):           number of augmented mnist data points in the vali set. This information is needed to efficiently
+                                calculate the regularization for the vali set, as the last 2*c data points will be dublettes
+        d (int):                number of dublettes to be contained in each training batch
+        ls (list):              list of regularization parameters to be validated
+        key (jax.RNG):          jax RNG key
+        img_shape (tuple):      tuple describing the shape of a single input image
+        method (string):        regularization method, either "CVP" or "CVR" for conditional variance of prediction and
+                                representation respectively
+        tf_seed (int):          tensorflow rng seed
 
     Returns:
-        state (TrainState): state of the selected model
-        test1_accuracy (float): accuracy on test set 1 of the best model. Test set 1 contains non-rotated images only
-        test2_accuracy (float:) accuracy on test set 2 of the best model. Test set 2 contains rotated images only
+        best_state (TrainState):    state of the selected model
+        test1_accuracy (float):     accuracy on test set 1 of the best model
+        test2_accuracy (float:)     accuracy on test set 2 of the best model
     '''
 
     if method not in ["CVP", "CVR"]:

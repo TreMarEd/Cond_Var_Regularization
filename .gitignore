@@ -1,8 +1,6 @@
 .vscode/launch.json
 .conda
-learning_curves/learning*
 __pycache__
-logfile.txt
 data/celeb/augmented/augmented_*
 data/augmented_mnist/seed*
 data/celeb/images/CelebA*

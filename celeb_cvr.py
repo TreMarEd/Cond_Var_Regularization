@@ -1,5 +1,6 @@
 """
 Author: Marius Tresoldi, spring 2024
+
 The following script implements conditional variance of representation regularization in jax/flax for domain shift robust 
 transfer learning in the CelebA dataset. The general experiment set-up is based on section 5.3 of the following paper:
 
@@ -9,7 +10,7 @@ The training, validation and test set 1 consist of people without beards (Y=0) a
 all datapoints with Y=1 has been artificially degraded. Training and validation set additionally contain augmented data points
 with Y=1 and original quality, as is required by conditional variance regularization. In test set 2 this is inversed: Y=0 data 
 points are degraded, and Y=1 have original quality. An unregularized CNN is trained, which is not domain shift robust: test1 
-and test2 accuracies differ substantially as the network leans to misuse the image quality as a predictor for beardedness. 
+and test2 accuracies differ substantially as the network learns to misuse the image quality as a predictor for beardedness. 
 
 Conditional variance of representation is applied to regularize the beard model and make it domain shift robust.
 The learned representations of the beard model are extracted and transferred to the task of predicting mustaches, goatees and 
@@ -58,11 +59,11 @@ def resize_degrade_CelebA(CelebA_path, resize_0, resize_1, seed):
     according to a normal distibution with mean 30 and variance 100 using ImageMagick.
 
     Parameters:
-        CelebA_path (string): path to a directory containing the original CelebA dataset. The path must contain a directory
-                              named "CelebA", which in turn contains the CelebA dataset as downloaded.
-        resize_0 (int): new resolution along axis 0. Note that in CelebA axis0 smaller than axis1
-        resize_1 (int): new resolution along axis 1. Note that in CelebA axis0 smaller than axis1
-        seed (int): seed for jax rng creation when degrading images randomly
+        CelebA_path (string):   path to a directory containing the original CelebA dataset. The path must contain a directory
+                                named "CelebA", which in turn contains the CelebA dataset as downloaded.
+        resize_0 (int):         new resolution along axis 0. Note that in CelebA axis0 smaller than axis1
+        resize_1 (int):         new resolution along axis 1. Note that in CelebA axis0 smaller than axis1
+        seed (int):             seed for jax rng creation when degrading images randomly
 
     Returns:
         None, saves the resized and resized + degraded datasets in the same format as the provided original data.
@@ -131,14 +132,14 @@ def sample_arrays(arrays, n, key, axis=0):
     with the sampled data and a list of arrays containing the remaining non-sampled data.
 
     Parameters:
-        base_path (list): list of arrays to be sampled
-        n (int): number of samples to draw
-        key (jax RNG key): rng key to be used by jax
-        axis (int): axis along which the samples will be drawn
+        base_path (list):   list of arrays to be sampled
+        n (int):            number of samples to draw
+        key (jax RNG key):  rng key to be used by jax
+        axis (int):         axis along which the samples will be drawn
 
     Returns:
-        sample_arrays (list): list of arrays containing the samlpled entries
-        rest_arrays (list): list of arrays containing the remaining non-sampled data
+        sample_arrays (list):   list of arrays containing the samlpled entries
+        rest_arrays (list):     list of arrays containing the remaining non-sampled data
     '''
 
     shapes = [jnp.shape(array) for array in arrays]
@@ -179,17 +180,17 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
         base_path (string): path to a directory containing the folders "images" and "augmented", where the former contains
                             original CelebA data and resized/degraded CelebA data and the latter is the target directory for 
                             this function
-        n_train (int): the number of non-augmented datapoints in the train set
-        n_vali (int): the number of non-augmented datapoints in the vali set
-        n_test (int): the number of datapoints in the test1 and test2 sets
-        f_1 (float): n*f_1 is the number of non-augmented datapoints with Y=1
-        f_aug (float): fraction of Y=1 datapoints that are to be aumented with non-degraded images in the train and vali sets
-        label_idx (int): the index of the relevant label to be used from the original CelebA dataset, f.e. 15 => eyeglasses
-        resize_0 (int): resolution of the images along axis zero as created by function "resize_degrade_CelebA"
-        resize_1 (int): resolution of the images along axis 1 as created by function "resize_degrade_CelebA"
-        seed (int): seed that was used during the call to resize_degrade_CelebA to create the prepared CelebA datasets
-        flip_y (bool): states whethre Y=0 and Y=1 should be interchanged. Needed for beard data in CelebA because originally
-                       no beard corresponds to Y=1, while here Y=1 must signify with beard
+        n_train (int):      the number of non-augmented datapoints in the train set
+        n_vali (int):       the number of non-augmented datapoints in the vali set
+        n_test (int):       the number of datapoints in the test1 and test2 sets
+        f_1 (float):        n*f_1 is the number of non-augmented datapoints with Y=1
+        f_aug (float):      fraction of Y=1 datapoints that are to be aumented with non-degraded images in the train and vali sets
+        label_idx (int):    the index of the relevant label to be used from the original CelebA dataset, f.e. 15 => eyeglasses
+        resize_0 (int):     resolution of the images along axis zero as created by function "resize_degrade_CelebA"
+        resize_1 (int):     resolution of the images along axis 1 as created by function "resize_degrade_CelebA"
+        seed (int):         seed that was used during the call to resize_degrade_CelebA to create the prepared CelebA datasets
+        flip_y (bool):      states whethre Y=0 and Y=1 should be interchanged. Needed for beard data in CelebA because originally
+                            no beard corresponds to Y=1, while here Y=1 must signify with beard
 
     Returns:
         None
@@ -368,13 +369,13 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
 def load_celeba(base_path, resize_0, resize_1, seed, label_idx):
     '''
     Parameters:
-        base_path (strin): path containing the directory created by a previous call to create_CelebA. The pat should contain a 
-                           directory with name  "augmented_CelebA_resized{resize_0}x{resize_1}_seed{seed}_label{label_idx}"
-        resize_0 (int): the resolution along the first axis of the images to be loaded
-        resize_1 (int): the resolution along the second axis of the images to be loaded
-        seed (int): seed that was used to create the dataset to be loaded in a previous call to create_CelebA or
-                    create_augmented_CelebA
-        label_idx (int): index of the label that was used to create the dataset, f.e. 15 = eyeglasses
+        base_path (strin):  path containing the directory created by a previous call to create_CelebA. The pat should contain a 
+                            directory with name  "augmented_CelebA_resized{resize_0}x{resize_1}_seed{seed}_label{label_idx}"
+        resize_0 (int):     the resolution along the first axis of the images to be loaded
+        resize_1 (int):     the resolution along the second axis of the images to be loaded
+        seed (int):         seed that was used to create the dataset to be loaded in a previous call to create_CelebA or
+                            create_augmented_CelebA
+        label_idx (int):    index of the label that was used to create the dataset, f.e. 15 = eyeglasses
        
     Returns:
         train_data (dic): dictionary with keys "sing_features", "sing_labels", "dub_orig_featrues", "dub_aug_features", "dub_labels".
