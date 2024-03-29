@@ -1,19 +1,23 @@
 """
-The following script prepares the CelebA data for the transfer learning experiment using conditional variance regularization for 
-domain shift invariance. The data is prepared the following way:
-    - the original CelebA data is resized and an additional resized version with randomly degraded images is created
+Author: Marius Tresoldi, spring 2024
+The following script implements conditional variance of representation regularization in jax/flax for domain shift robust 
+transfer learning in the CelebA dataset. The general experiment set-up is based on section 5.3 of the following paper:
 
-    - train, vali and test sets for the regularized training are created, f.e. for detecting eyeglasses. 
-      The goal is to transfer the learned features to the non-regulairzed training
-        - in train and vali all Y=0 datapoints are non-degraded and all Y=1 datapoints are degraded. Additionally,
-          some Y=1 datapoints are augmented with non-degraded counterparts to learn the domain shif invariance
-        - the test1 set contains only non-degraded Y=0 data and only degraded Y=1 data
-        - the test2 set contains only degraded Y=0 data and only non-degraded Y=1 data to test domain shift robustness
+https://arxiv.org/abs/1710.11469
 
-    - train, vali and test sets are created for the non-regularized training, f.e. for detecting mustaches
-        - in train and vali all Y=0 datapoints are non-degraded and all Y=1 datapoints are degraded. 
-        - the test1 set contains only non-degraded Y=0 data and only degraded Y=1 data
-        - the test2 set contains only degraded Y=0 data and only non-degraded Y=1 data to test domain shift robustness
+The training, validation and test set 1 consist of people without beards (Y=0) and with beards (Y=1), where the quality of 
+all datapoints with Y=1 has been artificially degraded. Training and validation set additionally contain augmented data points
+with Y=1 and original quality, as is required by conditional variance regularization. In test set 2 this is inversed: Y=0 data 
+points are degraded, and Y=1 have original quality. An unregularized CNN is trained, which is not domain shift robust: test1 
+and test2 accuracies differ substantially as the network leans to misuse the image quality as a predictor for beardedness. 
+
+Conditional variance of representation is applied to regularize the beard model and make it domain shift robust.
+The learned representations of the beard model are extracted and transferred to the task of predicting mustaches, goatees and 
+sideburns. The output shows that conditional variance of representation regularization leads to representations that allow 
+for domain shift robust transfer learning:  without applying any regularization the mustache/goatee/sideburn model with the 
+beard representaitons will be domain shift invariant. The transferred models are then compared to the unregularized and 
+regularized case to show that the model with the transferred representations has similar performance as a model that is 
+directly regularized.
 """
 
 from torchvision import datasets
@@ -26,14 +30,13 @@ import subprocess
 from PIL import Image
 import jax
 import jax.numpy as jnp
-import warnings
 import train_utils as tu
 
 
 class CNN_celeba(nn.Module):
     @nn.compact
     def __call__(self, x):
-        x = nn.Conv(features=12, kernel_size=(4, 3), strides=2)(x)
+        x = nn.Conv(features=12, kernel_size=(4, 3), strides=2)(x) # kernel size chosen s.t. final feature has shape (3,2)
         x = nn.activation.leaky_relu(x)
         x = nn.Conv(features=12, kernel_size=(4, 3), strides=2)(x)
         x = nn.activation.leaky_relu(x)
@@ -55,14 +58,15 @@ def resize_degrade_CelebA(CelebA_path, resize_0, resize_1, seed):
     according to a normal distibution with mean 30 and variance 100 using ImageMagick.
 
     Parameters:
-        CelebA_path (string): path to a directory containing the original Celeb A dataset in the directory named celeba
+        CelebA_path (string): path to a directory containing the original CelebA dataset. The path must contain a directory
+                              named "CelebA", which in turn contains the CelebA dataset as downloaded.
         resize_0 (int): new resolution along axis 0. Note that in CelebA axis0 smaller than axis1
         resize_1 (int): new resolution along axis 1. Note that in CelebA axis0 smaller than axis1
         seed (int): seed for jax rng creation when degrading images randomly
 
     Returns:
-        None, saves the resized and resized + degraded datasets in the same format and the same directory 
-        as CelebA_path is saved in
+        None, saves the resized and resized + degraded datasets in the same format as the provided original data.
+        The data is written to CelebA_path under the name "CelebA_resized{resize_0}x{resize_1}_seed{seed}
     '''
 
     print(f"########################### CREATING RESIZED AND DEGRADED CELEBA ###########################")
@@ -123,8 +127,8 @@ def resize_degrade_CelebA(CelebA_path, resize_0, resize_1, seed):
 
 def sample_arrays(arrays, n, key, axis=0):
     '''
-    Given a list of arrays, samples values from the same random n indices of all of them and returns a list of arrays both
-    with the sampled data and a list of arrays with containing the remaining non-sampled data
+    Given a list of arrays, samples values from the same random n indices of these arrrays and returns both a list of arrays 
+    with the sampled data and a list of arrays containing the remaining non-sampled data.
 
     Parameters:
         base_path (list): list of arrays to be sampled
@@ -172,14 +176,20 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
         - y_<train/vali>_orig: the labels of all original, meaning non-augmented, degraded datapoints
 
     Parameters:
-        base_path (string): path to a directory containing the CelebA directories created by the function resize_degrade_CelebA
+        base_path (string): path to a directory containing the folders "images" and "augmented", where the former contains
+                            original CelebA data and resized/degraded CelebA data and the latter is the target directory for 
+                            this function
         n_train (int): the number of non-augmented datapoints in the train set
         n_vali (int): the number of non-augmented datapoints in the vali set
         n_test (int): the number of datapoints in the test1 and test2 sets
         f_1 (float): n*f_1 is the number of non-augmented datapoints with Y=1
         f_aug (float): fraction of Y=1 datapoints that are to be aumented with non-degraded images in the train and vali sets
         label_idx (int): the index of the relevant label to be used from the original CelebA dataset, f.e. 15 => eyeglasses
+        resize_0 (int): resolution of the images along axis zero as created by function "resize_degrade_CelebA"
+        resize_1 (int): resolution of the images along axis 1 as created by function "resize_degrade_CelebA"
         seed (int): seed that was used during the call to resize_degrade_CelebA to create the prepared CelebA datasets
+        flip_y (bool): states whethre Y=0 and Y=1 should be interchanged. Needed for beard data in CelebA because originally
+                       no beard corresponds to Y=1, while here Y=1 must signify with beard
 
     Returns:
         None
@@ -188,24 +198,19 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
     
     print(f"########################### CREATING AUGMENTED CELEBA FOR LABEL {label_idx} ###########################")
 
+    # total numbre of images in the orignal CelebA dataset
     n_tot = 202599
     assert n_train + n_vali + 2*n_test < n_tot, "train, test and vali set have bigger combined size than Celeb A"
 
-    if (n_train + n_vali + 2*n_test) * f_1 < 0.04 * n_tot:
-        warnings.warn("It is likely that you requested more Y=1 data than is contained in Celeb A. In this \
-                      case a downstream error in the sample_arrays function will be raised")
-
     key = jax.random.key(seed)
-    CelebA = datasets.CelebA(root=base_path + fr"\images\CelebA_resized{resize_0}x{resize_1}_seed{seed}", split='all', target_type='attr',
-                             transform=ToTensor(), download=True)
-    CelebA_d = datasets.CelebA(root=base_path + fr"\images\CelebA_resized{resize_0}x{resize_1}_degraded_seed{seed}", split='all', target_type='attr',
-                               transform=ToTensor(), download=True)
+    CelebA = datasets.CelebA(root=base_path + fr"\images\CelebA_resized{resize_0}x{resize_1}_seed{seed}", split='all', 
+                             target_type='attr', transform=ToTensor(), download=True)
+    CelebA_d = datasets.CelebA(root=base_path + fr"\images\CelebA_resized{resize_0}x{resize_1}_degraded_seed{seed}", split='all',
+                               target_type='attr', transform=ToTensor(), download=True)
     
-    # separate features according to whether Y=0 or Y=1
-    # d for degraded
+    # separate features according to whether Y=0 or Y=1, d for degraded, nd for non-degraded
     x_0_d = []
     x_1_d = []
-    #nd for non-degraded
     x_0_nd = []
     x_1_nd = []
 
@@ -243,7 +248,7 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
     x_1_d = jnp.asarray(x_1_d)
     x_1_nd = jnp.asarray(x_1_nd)
 
-    # color channel dim needs to be the last one to conform with training functions already written
+    # color channel dim needs to be the last one to conform with training functions in train_utils.py
     x_0_d = jnp.moveaxis(x_0_d, 1, -1)
     x_0_nd = jnp.moveaxis(x_0_nd, 1, -1)
     x_1_d = jnp.moveaxis(x_1_d, 1, -1)
@@ -254,11 +259,13 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
     m_vali  = int(f_1 * n_vali)
     m_test = int(f_1 * n_test)
 
-    # c is the number of augmented datapoints
+    # number of augmented datapoints
     c_train = int(m_train * f_aug)
     c_vali = int(m_vali * f_aug)
 
     ################################### create train data ###################################
+    # first draw the singlett datapoints, meaning the ones that will not get augmented. For Y=0 those are n - m many
+    # while for Y=1 those are m - c many
     key, subkey = jax.random.split(key)
     [x_0_d_sample, x_0_nd_sample], [x_0_d, x_0_nd] = sample_arrays([x_0_d, x_0_nd], n_train - m_train, subkey)
     
@@ -266,7 +273,7 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
     [x_1_d_sample, x_1_nd_sample], [x_1_d, x_1_nd] = sample_arrays([x_1_d, x_1_nd], m_train - c_train, subkey)
     
     x_train_sing = jnp.vstack((x_0_nd_sample, x_1_d_sample))
-    y_train_sing = jnp.hstack((jnp.zeros((n_train-m_train)), jnp.ones((m_train - c_train))))
+    y_train_sing = jnp.hstack((jnp.zeros((n_train - m_train)), jnp.ones((m_train - c_train))))
     y_train_sing = y_train_sing
 
     key, subkey = jax.random.split(key)
@@ -276,6 +283,8 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
     y_train_orig = jnp.ones((c_train,))
 
     ################################### create vali data ###################################
+    # first draw the singlett datapoints, meaning the ones that will not get augmented. For Y=0 those are n - m many
+    # while for Y=1 those are m - c many
     key, subkey = jax.random.split(key)
     [x_0_d_sample, x_0_nd_sample], [x_0_d, x_0_nd] = sample_arrays([x_0_d, x_0_nd], n_vali - m_vali, subkey)
     
@@ -283,17 +292,17 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
     [x_1_d_sample, x_1_nd_sample], [x_1_d, x_1_nd] = sample_arrays([x_1_d, x_1_nd], m_vali - c_vali, subkey)
     
     x_vali_sing = jnp.vstack((x_0_nd_sample, x_1_d_sample))
-    y_vali_sing = jnp.hstack((jnp.zeros((n_vali-m_vali)), jnp.ones((m_vali - c_vali))))
+    y_vali_sing = jnp.hstack((jnp.zeros((n_vali - m_vali)), jnp.ones((m_vali - c_vali))))
 
     key, subkey = jax.random.split(key)
     [x_vali_orig, x_vali_aug], [x_1_d, x_1_nd] = sample_arrays([x_1_d, x_1_nd], c_vali, subkey)
     
-    # all dublettes have Y=1
+    # all dublettes have Y=1: deteriorated data will be augmented with the original non-deteriorated image
     y_vali_orig = jnp.ones((c_vali,))
 
     # the vali data does not have to be saved separately: this is only done for the test set to efficiently
     # create training batches during training: the dublettes should be at the end of the batch with data 
-    # points in the same group consecutive to each other. One can directly prepare the vali data in this fashion here
+    # points in the same group consecutive to each other. One can directly prepare the complete vali data in this fashion here
     y_vali = jnp.hstack((y_vali_sing, y_vali_orig, y_vali_orig)).astype(jnp.int32)
 
     # number of singlett data points
@@ -359,9 +368,8 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
 def load_celeba(base_path, resize_0, resize_1, seed, label_idx):
     '''
     Parameters:
-        augmented (bool): boolean stating whether to load an augmented or non-augmented dataset
-        base_path (strin): path containing the directory created by a previous call to create_CelebA or
-                           create_augmented_CelebA
+        base_path (strin): path containing the directory created by a previous call to create_CelebA. The pat should contain a 
+                           directory with name  "augmented_CelebA_resized{resize_0}x{resize_1}_seed{seed}_label{label_idx}"
         resize_0 (int): the resolution along the first axis of the images to be loaded
         resize_1 (int): the resolution along the second axis of the images to be loaded
         seed (int): seed that was used to create the dataset to be loaded in a previous call to create_CelebA or
@@ -392,6 +400,7 @@ def load_celeba(base_path, resize_0, resize_1, seed, label_idx):
     y_test1 = jnp.load(dir_path + "\\test\\y_test1.npy")
     y_test2 = jnp.load(dir_path + "\\test\\y_test2.npy")
 
+    # only train data has the complicated structure needed for the regularization where dublettes and singletts are separated
     train_data = {"sing_features": x_train_sing, "sing_labels": y_train_sing, "dub_orig_features": x_train_orig,
                   "dub_labels": y_train_orig, "dub_aug_features": x_train_aug}
     vali_data = {"features": x_vali, "labels": y_vali}
@@ -415,7 +424,9 @@ if __name__ == "__main__":
     batch_size = 102
     d = 2 #d is the number of dublette (Y, ID) groups per batch
     num_batches = 200
-    l = 1000
+    c_vali = int(n_vali * f_1 * f_aug) # number of augmented data points
+
+    l = 1000 # regularization parameter
 
     ######################################## LOAD ORIGINAL CELEBA DATASET  ########################################
     data_path = r"C:\Users\Marius\Desktop\DAS\Cond_Var_Regularization\data\celeb"
@@ -429,11 +440,12 @@ if __name__ == "__main__":
     if not os.path.exists(dir_path):
         resize_degrade_CelebA(data_path + r"\images", img_shape[0], img_shape[1], seed)
 
-    # initialize results
     results = {}
     # relevant indices of labels in the CelebA dataset
     labels = {"GOATEE": 16, "MUSTACHES": 22, "SIDEBURNS": 30}
 
+    # for each label 3 models are trained: one with no regularization, one with CVR regulariation and one with transferred
+    # beard features. For each model test1 and test2 accuracies are saved
     for label in labels.keys():
         results[label] = {"NO-REG": {"test1": [], "test2": []}, "CVR": {"test1": [], "test2": []}, 
                           "TRANSFER": {"test1": [], "test2": []}}
@@ -454,14 +466,16 @@ if __name__ == "__main__":
         cnn = CNN_celeba()
         key = jax.random.key(seed)
         key, subkey = jax.random.split(key) 
+        # train without regularization
         state_b0, vali_acc_b0, t1_acc_b0, t2_acc_b0 = tu.train_cnn(cnn, train_data, vali_data, test1_data, test2_data, 
                                                                    num_epochs, learning_rate, batch_size, num_batches, 
-                                                                   100, d, 0, subkey, img_shape)
+                                                                   c_vali, d, 0, subkey, img_shape)
         key = jax.random.key(seed)
         key, subkey = jax.random.split(key)
+        # train with regularization
         state_bcvr, vali_acc_bcvr, t1_acc_bcvr, t2_acc_bcvr = tu.train_cnn(cnn, train_data, vali_data, test1_data, test2_data, 
                                                                            num_epochs, learning_rate, batch_size, num_batches, 
-                                                                           100, d, l, subkey, img_shape)
+                                                                           c_vali, d, l, subkey, img_shape)
         
         def get_repr(x):
             """maps an input image to the learned representation of the CVR beard model"""
@@ -482,39 +496,44 @@ if __name__ == "__main__":
         # reduce vali and test set size due to lower availability of Y=1 data for the above indices
         n_vali = 4000
         n_test = 4000
+        c_vali = int(n_vali * f_1 * f_aug) # number of augmented data points
 
         for label, idx in labels.items():
             print(f"\n#################### RUNNING {label} ####################")
 
-            # create data if it doesn't exist, load it
             dir_path = data_path + fr"\augmented\augmented_CelebA_resized{img_shape[0]}x{img_shape[1]}_seed{seed}_label{idx}"
             if not os.path.exists(dir_path):
                 create_augmented_CelebA(data_path, n_train, n_vali, n_test, f_1, f_aug, idx, img_shape[0], img_shape[1], seed)
 
             train_data, vali_data, t1_data, t2_data = load_celeba(data_path + r"\augmented", img_shape[0], img_shape[1], seed, idx)
             
-            # no regularization run
             key = jax.random.key(seed)
             key, subkey = jax.random.split(key)
+            # train without regularization
             state, vali_acc, t1_acc, t2_acc = tu.train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
-                                                           learning_rate, batch_size, num_batches, 80, d, 0, subkey, img_shape)   
+                                                           learning_rate, batch_size, num_batches, c_vali, d, 0, subkey, 
+                                                           img_shape)  
+            
             results[label]["NO-REG"]["test1"].append(t1_acc)
             results[label]["NO-REG"]["test2"].append(t2_acc)
 
-            # CVR regularized run
             key = jax.random.key(seed)
             key, subkey = jax.random.split(key)
+            # train with regularization
             state, vali_acc, t1_acc, t2_acc = tu.train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, 
-                                                           learning_rate, batch_size, num_batches, 80, d, l, subkey, img_shape)
+                                                           learning_rate, batch_size, num_batches, c_vali, d, l, subkey, 
+                                                           img_shape)
+            
             results[label]["CVR"]["test1"].append(t1_acc)
             results[label]["CVR"]["test2"].append(t2_acc)
 
-            # transferred run
             key = jax.random.key(seed)
             key, subkey = jax.random.split(key)
-            # num epochs reduced to 5 as model is much smaller        
+            # train with transferred beard representations, num epochs reduced to 5 as model is much smaller        
             state, vali_acc, t1_acc, t2_acc = tu.train_cnn(cnn_trf, train_data, vali_data, test1_data, test2_data, 5, 
-                                                           learning_rate, batch_size, num_batches, 80, d, 0, subkey, img_shape)
+                                                           learning_rate, batch_size, num_batches, c_vali, d, 0, subkey, 
+                                                           img_shape)
+            
             results[label]["TRANSFER"]["test1"].append(t1_acc)
             results[label]["TRANSFER"]["test2"].append(t2_acc)
      

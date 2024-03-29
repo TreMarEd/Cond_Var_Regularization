@@ -1,5 +1,4 @@
 """
-Contains all necessary utilities for the training loop using conditional variance regularization.
 """
 
 import tensorflow as tf
@@ -55,7 +54,7 @@ def train_step(state, images, labels, d, l, method="CVR"):
     '''
 
     if method not in ["CVP", "CVR"]:
-        raise ValueError("Provided method nor recognized. Method should be either CVP or CVR")
+        raise ValueError("Provided method not recognized. Method should be either CVP or CVR")
 
     # m is the number of unique (ID, Y) groups in the batch, meaning both singletts (group of cardinality 1)
     # and dublettes (group of cardinality 2). d is the number of unique dublettes in the batch. The number of singletts is hence
@@ -69,7 +68,6 @@ def train_step(state, images, labels, d, l, method="CVR"):
 
         # forward pass
         logits, repr = state.apply_fn({'params': params_}, images)
-
         # initialize regularization term
         C = 0
 
@@ -80,7 +78,7 @@ def train_step(state, images, labels, d, l, method="CVR"):
             # get indices of samples in the same dublette
             idxs = jnp.array([n_t + 2*i, n_t + 2*i + 1])
 
-            # calculate variance of the logits inside the dublette
+            # calculate variance of the logits (CVP) or representations (CVR) inside the dublette
             if method == "CVP":
                 vars = jnp.nanvar(jnp.take(logits, idxs, axis=0), axis=0)
             else:
@@ -89,8 +87,7 @@ def train_step(state, images, labels, d, l, method="CVR"):
             C = C + jnp.sum(vars)
 
         # average over all (ID, Y) groups
-        C = C/m
-
+        C = C / m
         loss = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=labels).mean() + l * C
 
         return loss
@@ -121,7 +118,6 @@ def compute_metrics(state, images, labels, d, l, method="CVR"):
     Returns:
         state (TrainState): new updated training state which contains the calculated metrics in its Metrics attribute
     '''
-
 
     # m is the number of unique (ID, Y) groups in the batch, meaning both singletts (group of cardinality 1)
     # and dublettes (group of cardinality 2). d is the number of unique dublettes in the batch. The number of singletts is hence
@@ -265,7 +261,7 @@ def train_cnn(cnn, train_data, vali_data, test1_data, test2_data, num_epochs, le
     '''
 
     if method not in ["CVP", "CVR"]:
-        raise ValueError("Provided method nor recognized. Method should be either CVP or CVR")
+        raise ValueError("Provided method not recognized. Method should be either CVP or CVR")
 
     print(f"\n#################### START TRAINING {method} l = {l} ####################\n")
 
@@ -401,7 +397,6 @@ def model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epoc
 
     print(f"#################### PERFORMING {method} MODEL SELECTION FOR l = {ls} ####################")
 
-    dic = {}
     best_l = None
     best_vali_accuracy = -1000
 

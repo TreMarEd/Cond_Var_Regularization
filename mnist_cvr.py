@@ -1,15 +1,19 @@
 """
-The following script implements conditional variance regularization for domain shift robustness on the MNIST 
-data set in Jax/Flax. It reproduces the MNIST results of the following original paper introducing the method: 
+Author: Marius Tresoldi, Spring 2024
+The following script implements conditional variance of representation regularization in jax/flax for domain shift robust 
+transfer learning in the MNIST dataset. The general experiment set-up is based on section 5.5 of the following paper:
 
-https://arxiv.org/abs/1710.11469.
+https://arxiv.org/abs/1710.11469
 
-See README for details.
-................
+Training, validation and test set 1 consist of non-rotated digits. Training and validation set additionally contain augmented 
+data points that have been rotated, as is required by conditional variance regularization. Test set 2 contains only rotated 
+digits. An unregularized CNN is trained, which is not domain shift robust: test1 and test2 accuracies differ
+substantially as the network was only trained on non-rotated digits.
 
-TODO:
-[- write readme (after entire code including celeb is finished)]
-[- new requirements.txt]
+Both Conditional variance of prediction (CVP) and conditional variance of representation (CVR) are applied to regularize 
+the model and make it domain shift robust and their performance is compared to show that CVR performs only slightly worse than
+CVR but with the additional advantage that the representations learned by the model can be used for domain shift robust 
+transfer learning, see "celeb_cvr.py".
 """
 
 from flax import linen as nn
