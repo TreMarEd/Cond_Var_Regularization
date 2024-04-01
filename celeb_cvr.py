@@ -194,7 +194,6 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
 
     Returns:
         None
-
     '''
     
     print(f"########################### CREATING AUGMENTED CELEBA FOR LABEL {label_idx} ###########################")
@@ -204,9 +203,9 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
     assert n_train + n_vali + 2*n_test < n_tot, "train, test and vali set have bigger combined size than Celeb A"
 
     key = jax.random.key(seed)
-    CelebA = datasets.CelebA(root=base_path + fr"\images\CelebA_resized{resize_0}x{resize_1}_seed{seed}", split='all', 
+    CelebA = datasets.CelebA(root=base_path + fr"\images\CelebA_resized{resize_0}x{resize_1}_seed5297", split='all', 
                              target_type='attr', transform=ToTensor(), download=True)
-    CelebA_d = datasets.CelebA(root=base_path + fr"\images\CelebA_resized{resize_0}x{resize_1}_degraded_seed{seed}", split='all',
+    CelebA_d = datasets.CelebA(root=base_path + fr"\images\CelebA_resized{resize_0}x{resize_1}_degraded_seed5297", split='all',
                                target_type='attr', transform=ToTensor(), download=True)
     
     # separate features according to whether Y=0 or Y=1, d for degraded, nd for non-degraded
@@ -420,14 +419,14 @@ if __name__ == "__main__":
     n_test = 5000
     f_1 = 0.25 # fraction of Y=1 in the data set
     f_aug = 0.08 # fraction of Y=1 data that gets augmented with non-degraded datapoint
-    num_epochs = 35
+    num_epochs = 30
     learning_rate = 0.005
     batch_size = 102
     d = 2 #d is the number of dublette (Y, ID) groups per batch
     num_batches = 200
     c_vali = int(n_vali * f_1 * f_aug) # number of augmented data points
 
-    l = 1000 # regularization parameter
+    l = 500 # regularization parameter
 
     ######################################## LOAD ORIGINAL CELEBA DATASET  ########################################
     data_path = r"C:\Users\Marius\Desktop\DAS\Cond_Var_Regularization\data\celeb"
@@ -452,7 +451,7 @@ if __name__ == "__main__":
                           "TRANSFER": {"test1": [], "test2": []}}
     
     # repeat training for multiple seeds    
-    seeds = [5297]
+    seeds = [5297, 7654, 2710]
     for seed in seeds:
         ######################################## TRAIN BEARD MODELS ########################################
         # 24 is the index of beards
