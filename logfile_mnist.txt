@@ -1,0 +1,13 @@
+2024-04-02 11:49:53,877 INFO     Unable to initialize backend 'cuda': 
+2024-04-02 11:49:53,877 INFO     Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
+2024-04-02 11:49:53,881 INFO     Unable to initialize backend 'tpu': UNIMPLEMENTED: LoadPjrtPlugin is not implemented on windows yet.
+2024-04-02 18:09:22,593 INFO     
+###########################################################################
+
+2024-04-02 18:09:22,594 INFO     NON-REGULARIZED NON-ROTATED TEST ACCURACY = 0.97701997
+2024-04-02 18:09:22,595 INFO     CVP NON-ROTATED TEST ACCURACY = 0.94524
+2024-04-02 18:09:22,595 INFO     CVR NON-ROTATED TEST ACCURACY = 0.97265995
+2024-04-02 18:09:22,595 INFO     
+NON-REGULARIZED ROTATED TEST ACCURACY = 0.75998
+2024-04-02 18:09:22,595 INFO     CVP ROTATED TEST ACCURACY = 0.82052004
+2024-04-02 18:09:22,595 INFO     CVR ROTATED TEST ACCURACY = 0.82388

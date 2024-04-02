@@ -15,7 +15,7 @@ In the following, (ID, Y) groups that only contain a single data point will be c
 exactly two datapoints through data augmentation will be called dubletts.
 """
 
-#TODO: remove image_shape as function inpu as it can always be inferred from other inputs
+#TODO: remove image_shape as function input as it can always be inferred from other inputs
 
 import tensorflow as tf
 import jax
@@ -403,12 +403,12 @@ def model_selection(cnn, train_data, vali_data, test1_data, test2_data, num_epoc
     best_vali_accuracy = -1000
 
     for l in ls:
-        
+        key, subkey = jax.random.split(key)
         state, vali_accuracy, test1_accuracy, test2_accuracy = train_cnn(cnn, train_data, vali_data, test1_data, test2_data, 
                                                                          num_epochs, learning_rate, batch_size, num_batches, 
                                                                          c_vali, d, l, subkey, img_shape, method, 
                                                                          tf_seed)
-        key, subkey = jax.random.split(key)
+        
 
         if vali_accuracy > best_vali_accuracy:
             best_l = l

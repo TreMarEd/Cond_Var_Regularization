@@ -34,7 +34,7 @@ import jax.numpy as jnp
 import train_utils as tu
 import logging
 
-logging.basicConfig(level=logging.INFO, filename=".\logfile.txt", filemode="w+",
+logging.basicConfig(level=logging.INFO, filename=".\logfile_celeba.txt", filemode="w+",
                     format="%(asctime)-15s %(levelname)-8s %(message)s")
 
 
@@ -160,7 +160,8 @@ def sample_arrays(arrays, n, key, axis=0):
     return sample_arrays, rest_arrays
 
 
-def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, label_idx, resize_0, resize_1, seed, flip_y=False):
+def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, label_idx, resize_0, resize_1, seed, 
+                            deg_seed, flip_y=False):
     '''
     Provided paths to datasets of degraded and non-degraded CelebA images, creates and persists the augmentd Celeb A 
     dataset for the conditional variance regularization experiment. The created dataset contains a test and validation 
@@ -192,7 +193,8 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
         label_idx (int):    the index of the relevant label to be used from the original CelebA dataset, f.e. 15 => eyeglasses
         resize_0 (int):     resolution of the images along axis zero as created by function "resize_degrade_CelebA"
         resize_1 (int):     resolution of the images along axis 1 as created by function "resize_degrade_CelebA"
-        seed (int):         seed that was used during the call to resize_degrade_CelebA to create the prepared CelebA datasets
+        seed (int):         seed that will be used to sample from the degraded/resized images
+        deg_seed(int):      seed that was used during the call to resize_degrade_CelebA to create the prepared CelebA datasets
         flip_y (bool):      states whethre Y=0 and Y=1 should be interchanged. Needed for beard data in CelebA because originally
                             no beard corresponds to Y=1, while here Y=1 must signify with beard
 
@@ -207,10 +209,10 @@ def create_augmented_CelebA(base_path, n_train, n_vali, n_test, f_1, f_aug, labe
     assert n_train + n_vali + 2*n_test < n_tot, "train, test and vali set have bigger combined size than Celeb A"
 
     key = jax.random.key(seed)
-    CelebA = datasets.CelebA(root=base_path + fr"\images\CelebA_resized{resize_0}x{resize_1}_seed5297", split='all', 
+    CelebA = datasets.CelebA(root=base_path + fr"\images\CelebA_resized{resize_0}x{resize_1}_seed{deg_seed}", split='all', 
                              target_type='attr', transform=ToTensor(), download=True)
-    CelebA_d = datasets.CelebA(root=base_path + fr"\images\CelebA_resized{resize_0}x{resize_1}_degraded_seed5297", split='all',
-                               target_type='attr', transform=ToTensor(), download=True)
+    CelebA_d = datasets.CelebA(root=base_path + fr"\images\CelebA_resized{resize_0}x{resize_1}_degraded_seed{deg_seed}",
+                               split='all', target_type='attr', transform=ToTensor(), download=True)
     
     # separate features according to whether Y=0 or Y=1, d for degraded, nd for non-degraded
     x_0_d = []
@@ -439,10 +441,10 @@ if __name__ == "__main__":
         datasets.CelebA(root=data_path + r"\images\CelebA", split='all', target_type='attr', transform=ToTensor(), download=True)
 
     ######################################## CREATE RESIZED DEGRADED DATA  ########################################
-    seed = 5297
-    dir_path = data_path + fr"\images\CelebA_resized{img_shape[0]}x{img_shape[1]}_degraded_seed{seed}"
+    deg_seed = 5297
+    dir_path = data_path + fr"\images\CelebA_resized{img_shape[0]}x{img_shape[1]}_degraded_seed{deg_seed}"
     if not os.path.exists(dir_path):
-        resize_degrade_CelebA(data_path + r"\images", img_shape[0], img_shape[1], seed)
+        resize_degrade_CelebA(data_path + r"\images", img_shape[0], img_shape[1], deg_seed)
 
     results = {}
     # will only perform non-regularized run and CVR regularized run for beards
@@ -460,7 +462,7 @@ if __name__ == "__main__":
         dir_path = data_path + fr"\augmented\augmented_CelebA_resized{img_shape[0]}x{img_shape[1]}_seed{seed}_label24"
         if not os.path.exists(dir_path):
             create_augmented_CelebA(data_path, n_train, n_vali, n_test, f_1, f_aug, 24, img_shape[0], img_shape[1], seed, 
-                                    flip_y=True)
+                                    deg_seed, flip_y=True)
         
         train_data, vali_data, test1_data, test2_data = load_celeba(data_path + r"\augmented", img_shape[0], img_shape[1], seed,
                                                                     24)
@@ -512,7 +514,8 @@ if __name__ == "__main__":
 
             dir_path = data_path + fr"\augmented\augmented_CelebA_resized{img_shape[0]}x{img_shape[1]}_seed{seed}_label{idx}"
             if not os.path.exists(dir_path):
-                create_augmented_CelebA(data_path, n_train, n_vali, n_test, f_1, f_aug, idx, img_shape[0], img_shape[1], seed)
+                create_augmented_CelebA(data_path, n_train, n_vali, n_test, f_1, f_aug, idx, img_shape[0], img_shape[1], 
+                                        deg_seed, seed)
 
             train_data, vali_data, t1_data, t2_data = load_celeba(data_path + r"\augmented", img_shape[0], img_shape[1], seed, idx)
             
