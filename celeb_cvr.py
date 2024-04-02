@@ -32,6 +32,10 @@ from PIL import Image
 import jax
 import jax.numpy as jnp
 import train_utils as tu
+import logging
+
+logging.basicConfig(level=logging.INFO, filename=".\logfile.txt", filemode="w+",
+                    format="%(asctime)-15s %(levelname)-8s %(message)s")
 
 
 class CNN_celeba(nn.Module):
@@ -441,16 +445,14 @@ if __name__ == "__main__":
         resize_degrade_CelebA(data_path + r"\images", img_shape[0], img_shape[1], seed)
 
     results = {}
-    # relevant indices of labels in the CelebA dataset
-    labels = {"GOATEE": 16, "MUSTACHES": 22, "SIDEBURNS": 30}
-
-    # for each label 3 models are trained: one with no regularization, one with CVR regulariation and one with transferred
-    # beard features. For each model test1 and test2 accuracies are saved
+    # will only perform non-regularized run and CVR regularized run for beards
+    results["BEARD"] = {"NO-REG": {"test1": [], "test2": []}, "CVR": {"test1": [], "test2": []}}
+    # relevant indices of labels in the CelebA dataset that also obtain a run with transferred beard features
+    labels = {"GOATEE": 16, "MUSTACHE": 22, "SIDEBURNS": 30}
     for label in labels.keys():
         results[label] = {"NO-REG": {"test1": [], "test2": []}, "CVR": {"test1": [], "test2": []}, 
                           "TRANSFER": {"test1": [], "test2": []}}
-    
-    # repeat training for multiple seeds    
+        
     seeds = [5297, 7654, 2710]
     for seed in seeds:
         ######################################## TRAIN BEARD MODELS ########################################
@@ -470,12 +472,19 @@ if __name__ == "__main__":
         state_b0, vali_acc_b0, t1_acc_b0, t2_acc_b0 = tu.train_cnn(cnn, train_data, vali_data, test1_data, test2_data, 
                                                                    num_epochs, learning_rate, batch_size, num_batches, 
                                                                    c_vali, d, 0, subkey, img_shape)
+        
+        results["BEARD"]["NO-REG"]["test1"].append(t1_acc_b0)
+        results["BEARD"]["NO-REG"]["test2"].append(t2_acc_b0)
+
         key = jax.random.key(seed)
         key, subkey = jax.random.split(key)
         # train with regularization
         state_bcvr, vali_acc_bcvr, t1_acc_bcvr, t2_acc_bcvr = tu.train_cnn(cnn, train_data, vali_data, test1_data, test2_data, 
                                                                            num_epochs, learning_rate, batch_size, num_batches, 
                                                                            c_vali, d, l, subkey, img_shape)
+        
+        results["BEARD"]["CVR"]["test1"].append(t1_acc_bcvr)
+        results["BEARD"]["CVR"]["test2"].append(t2_acc_bcvr)
         
         def get_repr(x):
             """maps an input image to the learned representation of the CVR beard model"""
@@ -539,10 +548,10 @@ if __name__ == "__main__":
      
     ######################################## SUMMARIZE THE RESULTS ########################################
     print("\n################### BEARDS ################### \n")
-    print(f"NON-REGULARIZED NON-SHIFTED BEARDS TEST ACCURACY = {t1_acc_b0}")
-    print(f"CVR NON-SHIFTED BEARDS TEST ACCURACY = {t1_acc_bcvr}")
-    print(f"\nNON-REGULARIZED BEARDS SHIFTED TEST ACCURACY = {t2_acc_b0}")
-    print(f"CVR SHIFTED BEARDS TEST ACCURACY = {t2_acc_bcvr}")
+    print("NON-REGULARIZED NON-SHIFTED BEARDS TEST ACCURACY = " + str(np.average(results["BEARD"]["NO-REG"]["test1"])))
+    print("CVR NON-SHIFTED BEARDS TEST ACCURACY = " + str(np.average(results["BEARD"]["CVR"]["test1"])))
+    print("\nNON-REGULARIZED BEARDS SHIFTED TEST ACCURACY = " + str(np.average(results["BEARD"]["NO-REG"]["test2"])))
+    print("CVR SHIFTED BEARDS TEST ACCURACY = " + str(np.average(results["BEARD"]["CVR"]["test2"])))
 
     for label in labels.keys():
         print(f"\n################### {label} ################### \n")
@@ -552,3 +561,18 @@ if __name__ == "__main__":
         print("\nNON-REGULARIZED SHIFTED TEST ACCURACY = " + str(np.average(results[label]["NO-REG"]["test2"])))
         print("CVR SHIFTED TEST ACCURACY = " + str(np.average(results[label]["CVR"]["test2"])))
         print("CVR TRANSFER SHIFTED TEST ACCURACY = " + str(np.average(results[label]["TRANSFER"]["test2"])))
+
+    logging.info("\n################### BEARDS ################### \n")
+    logging.info("NON-REGULARIZED NON-SHIFTED BEARDS TEST ACCURACY = " + str(np.average(results["BEARD"]["NO-REG"]["test1"])))
+    logging.info("CVR NON-SHIFTED BEARDS TEST ACCURACY = " + str(np.average(results["BEARD"]["CVR"]["test1"])))
+    logging.info("\nNON-REGULARIZED BEARDS SHIFTED TEST ACCURACY = " + str(np.average(results["BEARD"]["NO-REG"]["test2"])))
+    logging.info("CVR SHIFTED BEARDS TEST ACCURACY = " + str(np.average(results["BEARD"]["CVR"]["test2"])))
+
+    for label in labels.keys():
+        logging.info(f"\n################### {label} ################### \n")
+        logging.info("NON-REGULARIZED NON-SHIFTED TEST ACCURACY = " + str(np.average(results[label]["NO-REG"]["test1"])))
+        logging.info("CVR NON-SHIFTED TEST ACCURACY = " + str(np.average(results[label]["CVR"]["test1"])))
+        logging.info("CVR TRANSFER NON-SHIFTED TEST ACCURACY = " + str(np.average(results[label]["TRANSFER"]["test1"])))
+        logging.info("\nNON-REGULARIZED SHIFTED TEST ACCURACY = " + str(np.average(results[label]["NO-REG"]["test2"])))
+        logging.info("CVR SHIFTED TEST ACCURACY = " + str(np.average(results[label]["CVR"]["test2"])))
+        logging.info("CVR TRANSFER SHIFTED TEST ACCURACY = " + str(np.average(results[label]["TRANSFER"]["test2"])))
