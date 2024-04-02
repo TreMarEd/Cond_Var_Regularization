@@ -38,10 +38,11 @@ class CNN_mnist(nn.Module):
         x = nn.relu(x)
         x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
         x = nn.relu(x)
-        x = nn.Conv(features=32, kernel_size=(5, 5), strides=2)(x)
+        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
         x = nn.relu(x)
-        x = nn.Conv(features=32, kernel_size=(5, 5), strides=2)(x)
+        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
         x = nn.relu(x)
+        x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
         x = x.reshape((x.shape[0], -1))
         # extract the learned representation and return it separately. This is needed for CVR regularization
         r = x
@@ -264,7 +265,7 @@ if __name__ == "__main__":
     num_batches = int(n / 100)
     num_epochs = 30
     learning_rate = 0.003
-    ls = [0.001, 0.01, 0.1, 1, 10, 100] # regularization parameters on which to perform model selection
+    ls = [0.1, 1, 10] # regularization parameters on which to perform model selection
     seeds = [3229, 6542, 4895, 1008, 5821]
 
     results = {}

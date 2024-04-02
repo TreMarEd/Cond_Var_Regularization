@@ -1,13 +1,13 @@
-2024-04-02 11:49:53,877 INFO     Unable to initialize backend 'cuda': 
-2024-04-02 11:49:53,877 INFO     Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
-2024-04-02 11:49:53,881 INFO     Unable to initialize backend 'tpu': UNIMPLEMENTED: LoadPjrtPlugin is not implemented on windows yet.
-2024-04-02 18:09:22,593 INFO     
+2024-04-02 20:14:02,561 INFO     Unable to initialize backend 'cuda': 
+2024-04-02 20:14:02,561 INFO     Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
+2024-04-02 20:14:02,564 INFO     Unable to initialize backend 'tpu': UNIMPLEMENTED: LoadPjrtPlugin is not implemented on windows yet.
+2024-04-02 21:41:42,384 INFO     
 ###########################################################################
 
-2024-04-02 18:09:22,594 INFO     NON-REGULARIZED NON-ROTATED TEST ACCURACY = 0.97701997
-2024-04-02 18:09:22,595 INFO     CVP NON-ROTATED TEST ACCURACY = 0.94524
-2024-04-02 18:09:22,595 INFO     CVR NON-ROTATED TEST ACCURACY = 0.97265995
-2024-04-02 18:09:22,595 INFO     
-NON-REGULARIZED ROTATED TEST ACCURACY = 0.75998
-2024-04-02 18:09:22,595 INFO     CVP ROTATED TEST ACCURACY = 0.82052004
-2024-04-02 18:09:22,595 INFO     CVR ROTATED TEST ACCURACY = 0.82388
+2024-04-02 21:41:42,384 INFO     NON-REGULARIZED NON-ROTATED TEST ACCURACY = 0.97368
+2024-04-02 21:41:42,384 INFO     CVP NON-ROTATED TEST ACCURACY = 0.97229993
+2024-04-02 21:41:42,385 INFO     CVR NON-ROTATED TEST ACCURACY = 0.9759399
+2024-04-02 21:41:42,385 INFO     
+NON-REGULARIZED ROTATED TEST ACCURACY = 0.72886
+2024-04-02 21:41:42,385 INFO     CVP ROTATED TEST ACCURACY = 0.85198003
+2024-04-02 21:41:42,385 INFO     CVR ROTATED TEST ACCURACY = 0.84047997
