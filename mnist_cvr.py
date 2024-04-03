@@ -38,10 +38,6 @@ class CNN_mnist(nn.Module):
         x = nn.relu(x)
         x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
         x = nn.relu(x)
-        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
-        x = nn.relu(x)
-        x = nn.Conv(features=16, kernel_size=(5, 5), strides=2)(x)
-        x = nn.relu(x)
         x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
         x = x.reshape((x.shape[0], -1))
         # extract the learned representation and return it separately. This is needed for CVR regularization
