@@ -1,6 +1,0 @@
-.vscode/launch.json
-.conda
-__pycache__
-data/celeb/augmented/augmented_*
-data/augmented_mnist/seed*
-data/celeb/images/CelebA*
