@@ -1,3 +1,0 @@
-2024-04-04 20:57:54,787 INFO     Unable to initialize backend 'cuda': 
-2024-04-04 20:57:54,787 INFO     Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
-2024-04-04 20:57:54,799 INFO     Unable to initialize backend 'tpu': UNIMPLEMENTED: LoadPjrtPlugin is not implemented on windows yet.
